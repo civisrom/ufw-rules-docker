@@ -1,0 +1,46 @@
+# Cache directories
+.cache/
+*.cache
+
+# Generated IP lists (optional - uncomment if you don't want to commit them)
+# generated-ips/
+
+# Backups
+backups/
+
+# Logs
+*.log
+/var/log/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.~lock.*
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Test files
+test_*.txt
+*.test

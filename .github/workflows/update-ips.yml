@@ -1,0 +1,225 @@
+name: Update UFW IP Lists
+
+on:
+  # Запуск по расписанию (каждый день в 2:00 UTC)
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Запуск вручную
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Принудительное обновление (игнорировать кеш)'
+        required: false
+        type: boolean
+        default: false
+
+  # Запуск при изменении конфигурации
+  push:
+    paths:
+      - 'ip-config.yml'
+      - 'generate-ips.sh'
+      - 'update-ufw-script.sh'
+    branches:
+      - main
+      - claude/**
+
+jobs:
+  update-ip-lists:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+          pip install -r requirements.txt
+          chmod +x generate-ips.sh update-ufw-script.sh extract-ips-from-maxmind.py
+
+      - name: Cache GeoIP databases
+        uses: actions/cache@v3
+        with:
+          path: .cache
+          key: geoip-${{ github.run_id }}
+          restore-keys: |
+            geoip-
+
+      - name: Generate IP lists
+        env:
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
+        run: |
+          echo "Запуск генерации IP списков..."
+          chmod +x generate-ips.sh
+          ./generate-ips.sh
+
+      - name: Update UFW script
+        run: |
+          echo "Обновление UFW скрипта..."
+          chmod +x update-ufw-script.sh
+          ./update-ufw-script.sh
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet ufw-docker-rules-v4.sh; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "Нет изменений в UFW скрипте"
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Обнаружены изменения в UFW скрипте"
+          fi
+
+      - name: Generate statistics
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          echo "## 📊 Статистика IP адресов" > stats.md
+          echo "" >> stats.md
+
+          for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
+            if [ -f "generated-ips/${list}.txt" ]; then
+              count=$(wc -l < "generated-ips/${list}.txt")
+              echo "- **${list}**: ${count} IP блоков" >> stats.md
+            fi
+          done
+
+          echo "" >> stats.md
+          echo "### 🔄 Изменения в скрипте" >> stats.md
+          echo '```diff' >> stats.md
+          git diff ufw-docker-rules-v4.sh | head -100 >> stats.md
+          echo '```' >> stats.md
+
+          cat stats.md
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Добавляем изменения
+          git add ufw-docker-rules-v4.sh
+          git add generated-ips/*.txt
+
+          # Создаем коммит
+          cat << EOF > commit-msg.txt
+          chore: автоматическое обновление IP списков
+
+          Обновлены IP адреса из настроенных источников:
+          $(cat stats.md | grep -A 10 "Статистика IP")
+
+          Дата: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Workflow: ${{ github.workflow }}
+          Run: ${{ github.run_id }}
+          EOF
+
+          git commit -F commit-msg.txt
+
+          # Пушим изменения
+          git push
+
+      - name: Create summary
+        if: always()
+        run: |
+          if [ -f stats.md ]; then
+            cat stats.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Изменений не обнаружено" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ip-lists-${{ github.run_id }}
+          path: |
+            generated-ips/
+            backups/
+          retention-days: 30
+
+  # Опциональная проверка валидности IP
+  validate-ips:
+    runs-on: ubuntu-latest
+    needs: update-ip-lists
+    if: success()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate IP addresses
+        run: |
+          python3 << 'EOF'
+          import ipaddress
+          import sys
+          import os
+
+          def validate_file(filename):
+              if not os.path.exists(filename):
+                  print(f"⚠️  Файл не найден: {filename}")
+                  return True
+
+              print(f"🔍 Проверка: {filename}")
+              valid = True
+              line_num = 0
+
+              with open(filename, 'r') as f:
+                  for line in f:
+                      line_num += 1
+                      line = line.strip()
+
+                      if not line or line.startswith('#'):
+                          continue
+
+                      try:
+                          ipaddress.ip_network(line, strict=False)
+                          print(f"  ✓ Строка {line_num}: {line}")
+                      except ValueError as e:
+                          print(f"  ✗ Строка {line_num}: {line} - {e}")
+                          valid = False
+
+              return valid
+
+          files = [
+              'generated-ips/ssh_allowed_ips.txt',
+              'generated-ips/docker_allowed_ips.txt',
+              'generated-ips/rustdesk_allowed_ips.txt'
+          ]
+
+          all_valid = True
+          for file in files:
+              if not validate_file(file):
+                  all_valid = False
+
+          if not all_valid:
+              print("\n❌ Обнаружены невалидные IP адреса!")
+              sys.exit(1)
+          else:
+              print("\n✅ Все IP адреса валидны!")
+          EOF
+
+      - name: Post validation results
+        if: always()
+        run: |
+          echo "## ✅ Валидация IP адресов" >> $GITHUB_STEP_SUMMARY
+          echo "Все IP адреса прошли проверку валидности" >> $GITHUB_STEP_SUMMARY

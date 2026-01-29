@@ -1,0 +1,153 @@
+# ============================================
+# IP Configuration for UFW Docker Rules
+# ============================================
+# Этот файл определяет источники IP адресов для различных списков доступа
+# GitHub Actions автоматически обработает этот файл и обновит ufw-docker-rules-v4.sh
+#
+# ⚠️ ВАЖНО: Все IP адреса извлекаются из MaxMind GeoLite2 баз данных
+# Требуется бесплатный License Key от MaxMind: https://www.maxmind.com/en/geolite2/signup
+# Добавьте MAXMIND_LICENSE_KEY в GitHub Secrets или в переменные среды
+#
+# MaxMind GeoLite2 базы данных:
+# - GeoLite2-Country: IP адреса по странам (ISO коды)
+# - GeoLite2-City: IP адреса по городам
+# - GeoLite2-ASN: IP адреса по ASN (провайдеры, облака)
+# ============================================
+
+version: "2.0"
+
+# ============================================
+# SSH_ALLOWED_IPS - Белый список для SSH доступа
+# ============================================
+ssh_allowed_ips:
+  # Прямые IP адреса в формате CIDR
+  direct_ips:
+    - "2.56.24.0/23"
+    # Добавьте свои IP адреса здесь
+    # - "203.0.113.0/24"
+
+  # ASN (Autonomous System Numbers)
+  # Получает все IP адреса, принадлежащие указанным ASN
+  asn:
+    # - "AS13335"  # Cloudflare
+    # - "AS15169"  # Google
+
+  # Страны (ISO 3166-1 alpha-2 коды)
+  # ВНИМАНИЕ: Это может добавить МНОГО IP адресов!
+  countries:
+    # - "US"  # США
+    # - "GB"  # Великобритания
+    # - "DE"  # Германия
+
+  # Города (требуется GeoLite2-City база)
+  # Формат: "Страна/Город" или "Страна/Регион/Город"
+  cities:
+    # - "RU/Moscow"
+    # - "US/California/San Francisco"
+
+# ============================================
+# DOCKER_ALLOWED_IPS - Белый список для Docker контейнеров
+# ============================================
+docker_allowed_ips:
+  direct_ips:
+    - "185.125.188.0/22"
+    - "34.64.0.0/10"
+
+  asn:
+    # - "AS15169"  # Google
+    # - "AS16509"  # Amazon AWS
+
+  countries:
+    # - "US"
+
+  cities:
+    # - "US/Virginia/Ashburn"  # AWS us-east-1
+
+# ============================================
+# RUSTDESK_ALLOWED_IPS - Белый список для RustDesk
+# ============================================
+rustdesk_allowed_ips:
+  direct_ips:
+    - "185.125.188.0/22"
+    - "34.64.0.0/10"
+
+  asn:
+    # - "AS13335"  # Cloudflare
+
+  countries:
+    # - "RU"
+    # - "US"
+
+  cities:
+    # - "RU/Moscow"
+
+# ============================================
+# НАСТРОЙКИ ГЕНЕРАЦИИ
+# ============================================
+settings:
+  # ⚠️ ОБЯЗАТЕЛЬНО: MaxMind License Key
+  # Получите БЕСПЛАТНЫЙ ключ на https://www.maxmind.com/en/geolite2/signup
+  #
+  # Для локального использования:
+  #   export MAXMIND_LICENSE_KEY="your_key_here"
+  #   ./generate-ips.sh
+  #
+  # Для GitHub Actions:
+  #   1. Перейдите в Settings → Secrets and variables → Actions
+  #   2. Создайте секрет: MAXMIND_LICENSE_KEY
+  #   3. Вставьте ваш ключ
+  #
+  # Без этого ключа система НЕ БУДЕТ РАБОТАТЬ!
+  maxmind_license_key: "${MAXMIND_LICENSE_KEY}"
+
+  # Использовать кеш GeoIP баз (ускоряет генерацию)
+  # CSV базы кешируются на 7 дней
+  use_geoip_cache: true
+
+  # Максимальное количество IP адресов для одного списка
+  # Защита от случайного добавления слишком большого количества адресов
+  max_ips_per_list: 10000
+
+  # Оптимизация: объединять соседние CIDR блоки
+  # MaxMind базы содержат множество мелких блоков, оптимизация обязательна
+  optimize_cidrs: true
+
+  # Дедупликация: удалять дубликаты
+  deduplicate: true
+
+  # MaxMind GeoLite2 базы данных (основной источник)
+  # Автоматически скачиваются в формате CSV
+  maxmind_databases:
+    country: "GeoLite2-Country-CSV"
+    city: "GeoLite2-City-CSV"
+    asn: "GeoLite2-ASN-CSV"
+
+# ============================================
+# ПРИМЕРЫ КОНФИГУРАЦИЙ
+# ============================================
+
+# Пример 1: Разрешить SSH только с определенных IP
+# ssh_allowed_ips:
+#   direct_ips:
+#     - "203.0.113.10/32"
+#     - "198.51.100.0/24"
+
+# Пример 2: Разрешить Docker доступ для всех AWS IP
+# docker_allowed_ips:
+#   asn:
+#     - "AS16509"  # Amazon
+
+# Пример 3: Разрешить RustDesk для всей страны
+# rustdesk_allowed_ips:
+#   countries:
+#     - "RU"
+
+# Пример 4: Комбинированная конфигурация
+# ssh_allowed_ips:
+#   direct_ips:
+#     - "10.0.0.0/8"
+#   asn:
+#     - "AS13335"
+#   cities:
+#     - "RU/Moscow"
+#     - "US/California/San Francisco"
