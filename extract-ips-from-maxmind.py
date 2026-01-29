@@ -152,7 +152,10 @@ class MaxMindExtractor:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if row.get('country_iso_code') == country_code:
-                        geoname_ids.add(row.get('geoname_id'))
+                        # Конвертируем geoname_id в строку для надежного сравнения
+                        gid = str(row.get('geoname_id', '')).strip()
+                        if gid:
+                            geoname_ids.add(gid)
         except Exception as e:
             log_error(f"Ошибка чтения {country_csv}: {e}")
             return ips
@@ -166,8 +169,10 @@ class MaxMindExtractor:
             with open(blocks_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get('geoname_id') in geoname_ids or \
-                       row.get('registered_country_geoname_id') in geoname_ids:
+                    # Конвертируем geoname_id в строку для сравнения
+                    gid = str(row.get('geoname_id', '')).strip()
+                    reg_gid = str(row.get('registered_country_geoname_id', '')).strip()
+                    if gid in geoname_ids or reg_gid in geoname_ids:
                         network = row.get('network')
                         if network:
                             ips.add(network)
@@ -204,7 +209,9 @@ class MaxMindExtractor:
             with open(blocks_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get('autonomous_system_number') == asn_number:
+                    # MaxMind CSV хранит ASN как число, конвертируем в строку для сравнения
+                    csv_asn = str(row.get('autonomous_system_number', '')).strip()
+                    if csv_asn == asn_number:
                         network = row.get('network')
                         if network:
                             ips.add(network)
@@ -253,7 +260,10 @@ class MaxMindExtractor:
                 for row in reader:
                     if (row.get('country_iso_code') == country and
                         row.get('city_name', '').lower() == city.lower()):
-                        geoname_ids.add(row.get('geoname_id'))
+                        # Конвертируем geoname_id в строку для надежного сравнения
+                        gid = str(row.get('geoname_id', '')).strip()
+                        if gid:
+                            geoname_ids.add(gid)
         except Exception as e:
             log_error(f"Ошибка чтения {city_csv}: {e}")
             return ips
@@ -267,7 +277,9 @@ class MaxMindExtractor:
             with open(blocks_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get('geoname_id') in geoname_ids:
+                    # Конвертируем geoname_id в строку для сравнения
+                    gid = str(row.get('geoname_id', '')).strip()
+                    if gid in geoname_ids:
                         network = row.get('network')
                         if network:
                             ips.add(network)
