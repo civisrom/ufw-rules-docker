@@ -30,8 +30,8 @@ ssh_allowed_ips:
   # Получает все IP адреса, принадлежащие указанным ASN
   asn:
     - "AS48004"
-    - "AS13335"  # Cloudflare
-    - "AS15169"  # Google
+    #- "AS13335"  # Cloudflare
+    #- "AS15169"  # Google
   # Страны (ISO 3166-1 alpha-2 коды)
   # ВНИМАНИЕ: Это может добавить МНОГО IP адресов!
   countries:
@@ -61,8 +61,8 @@ docker_allowed_ips:
     - "AS29194"
     - "AS203451"
     - "AS203561"
-    - "AS15169"  # Google
-    - "AS16509"  # Amazon AWS
+    #- "AS15169"  # Google
+    #- "AS16509"  # Amazon AWS
   countries:
     # - "US"
 
@@ -78,7 +78,7 @@ rustdesk_allowed_ips:
     #- "2.5.2.0/23"
 
   asn:
-    - "AS13335"  # Cloudflare
+    #- "AS13335"  # Cloudflare
 
   countries:
     # - "RU"
