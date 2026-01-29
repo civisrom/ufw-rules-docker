@@ -135,40 +135,54 @@ get_config_value() {
 }
 
 # ============================================
-# СКАЧИВАНИЕ GEOIP БАЗ
+# ВАЛИДАЦИЯ КОНФИГУРАЦИИ
 # ============================================
 
-download_geoip_databases() {
-    log_info "Скачивание GeoIP баз данных..."
+validate_config() {
+    log_info "Валидация ip-config.yml..."
 
-    if [ -z "$MAXMIND_LICENSE_KEY" ]; then
-        log_warning "MAXMIND_LICENSE_KEY не установлен. Пропуск скачивания GeoIP баз."
-        return 0
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log_error "Конфигурационный файл не найден: $CONFIG_FILE"
+        return 1
     fi
 
-    local databases=("GeoLite2-Country" "GeoLite2-City" "GeoLite2-ASN")
+    # Проверка YAML синтаксиса
+    if ! python3 << EOF
+import yaml
+import sys
 
-    for db in "${databases[@]}"; do
-        local db_file="${CACHE_DIR}/${db}.mmdb"
+try:
+    with open('$CONFIG_FILE', 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
 
-        # Проверяем возраст файла (обновляем если старше 7 дней)
-        if [ -f "$db_file" ]; then
-            local file_age=$(($(date +%s) - $(stat -c %Y "$db_file" 2>/dev/null || stat -f %m "$db_file" 2>/dev/null)))
-            if [ $file_age -lt 604800 ]; then
-                log_info "База $db актуальна (возраст: $((file_age / 86400)) дней)"
-                continue
-            fi
-        fi
+    # Проверяем базовую структуру
+    if not isinstance(config, dict):
+        print("ERROR: Конфигурация должна быть словарем")
+        sys.exit(1)
 
-        log_info "Скачивание ${db}..."
-        local url="https://download.maxmind.com/app/geoip_download?edition_id=${db}&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz"
+    # Проверяем наличие хотя бы одной секции
+    required_sections = ['ssh_allowed_ips', 'docker_allowed_ips', 'rustdesk_allowed_ips']
+    if not any(section in config for section in required_sections):
+        print("ERROR: Нет ни одной секции IP адресов")
+        sys.exit(1)
 
-        if curl -sSL "$url" | tar -xzf - -C "$CACHE_DIR" --strip-components=1 "*.mmdb" 2>/dev/null; then
-            log_success "✓ ${db} скачан"
-        else
-            log_warning "Не удалось скачать ${db}"
-        fi
-    done
+    print("OK")
+    sys.exit(0)
+
+except yaml.YAMLError as e:
+    print(f"ERROR: Некорректный YAML: {e}")
+    sys.exit(1)
+except Exception as e:
+    print(f"ERROR: {e}")
+    sys.exit(1)
+EOF
+    then
+        log_error "Некорректный YAML в $CONFIG_FILE"
+        return 1
+    fi
+
+    log_success "✓ Конфигурация валидна"
+    return 0
 }
 
 # ============================================
@@ -431,26 +445,31 @@ generate_ip_list() {
 
 main() {
     echo -e "${GREEN}=========================================="
-    echo -e "  IP Generator v1.0"
+    echo -e "  IP Generator v2.0 (MaxMind)"
     echo -e "==========================================${NC}"
     echo ""
 
     # Проверка зависимостей
     check_dependencies
+    echo ""
 
-    # Проверка конфигурационного файла
-    if [ ! -f "$CONFIG_FILE" ]; then
-        log_error "Конфигурационный файл не найден: $CONFIG_FILE"
+    # Валидация конфигурации
+    if ! validate_config; then
         exit 1
     fi
 
     log_info "Используется конфигурация: $CONFIG_FILE"
     log_info "Выходная директория: $OUTPUT_DIR"
     log_info "Кеш директория: $CACHE_DIR"
-    echo ""
 
-    # Скачивание GeoIP баз
-    download_geoip_databases
+    # Проверка MaxMind License Key
+    if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+        log_error "MAXMIND_LICENSE_KEY не установлен!"
+        log_error "Получите бесплатный ключ: https://www.maxmind.com/en/geolite2/signup"
+        log_error "Установите: export MAXMIND_LICENSE_KEY=\"ваш_ключ\""
+        exit 1
+    fi
+    log_success "✓ MAXMIND_LICENSE_KEY установлен"
     echo ""
 
     # Генерация списков IP

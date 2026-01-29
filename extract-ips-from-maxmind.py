@@ -7,10 +7,13 @@
 
 import sys
 import os
-import gzip
 import csv
 import ipaddress
 import argparse
+import urllib.request
+import urllib.error
+import zipfile
+import time
 from pathlib import Path
 from typing import Set, List
 
@@ -37,7 +40,7 @@ def log_error(message):
 
 class MaxMindExtractor:
     def __init__(self, cache_dir: str):
-        self.cache_dir = Path(cache_dir)
+        self.cache_dir = Path(cache_dir).resolve()
         self.csv_dir = self.cache_dir / "csv"
         self.csv_dir.mkdir(parents=True, exist_ok=True)
 
@@ -50,39 +53,75 @@ class MaxMindExtractor:
         return False
 
     def download_csv_database(self, db_name: str, license_key: str) -> bool:
-        """Скачивает CSV версию базы данных MaxMind"""
-        import urllib.request
-        import tarfile
-
+        """Скачивает CSV версию базы данных MaxMind с обработкой ошибок"""
         log_info(f"Скачивание CSV базы данных: {db_name}...")
 
         url = f"https://download.maxmind.com/app/geoip_download?edition_id={db_name}&license_key={license_key}&suffix=zip"
+        zip_path = self.cache_dir / f"{db_name}.zip"
 
         try:
-            zip_path = self.cache_dir / f"{db_name}.zip"
-
-            # Проверяем возраст файла
+            # Проверяем возраст файла (кеш на 7 дней)
             if zip_path.exists():
-                import time
                 file_age = time.time() - zip_path.stat().st_mtime
                 if file_age < 7 * 24 * 3600:  # 7 дней
                     log_info(f"CSV база {db_name} актуальна (возраст: {int(file_age / 86400)} дней)")
                     return True
 
-            # Скачиваем
+            # Скачиваем с повторными попытками
             log_info(f"Загрузка {db_name} CSV...")
-            urllib.request.urlretrieve(url, zip_path)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Скачиваем с timeout
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=60) as response:
+                        with open(zip_path, 'wb') as out_file:
+                            out_file.write(response.read())
+                    break  # Успешно скачали
+                except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+                    if attempt < max_retries - 1:
+                        log_warning(f"Попытка {attempt + 1}/{max_retries} не удалась: {e}. Повтор...")
+                        time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                    else:
+                        raise  # Последняя попытка - прокидываем исключение
 
             # Распаковываем
-            import zipfile
+            log_info(f"Распаковка {db_name}...")
+            extract_dir = self.csv_dir / db_name
+            extract_dir.mkdir(parents=True, exist_ok=True)
+
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(self.csv_dir / db_name)
+                zip_ref.extractall(extract_dir)
+
+            # Удаляем временный ZIP файл для экономии места
+            try:
+                zip_path.unlink()
+                log_info(f"Временный файл {zip_path.name} удален")
+            except Exception:
+                pass  # Не критично если не удалось удалить
 
             log_success(f"✓ {db_name} CSV база загружена и распакована")
             return True
 
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                log_error(f"Ошибка аутентификации: неверный License Key")
+            else:
+                log_error(f"HTTP ошибка {e.code}: {e.reason}")
+            return False
+        except urllib.error.URLError as e:
+            log_error(f"Сетевая ошибка при загрузке {db_name}: {e.reason}")
+            return False
+        except zipfile.BadZipFile:
+            log_error(f"Поврежденный ZIP файл: {db_name}")
+            # Удаляем поврежденный файл
+            try:
+                zip_path.unlink()
+            except:
+                pass
+            return False
         except Exception as e:
-            log_error(f"Ошибка загрузки {db_name}: {e}")
+            log_error(f"Непредвиденная ошибка при загрузке {db_name}: {e}")
             return False
 
     def get_ips_by_country(self, country_code: str) -> Set[str]:
