@@ -134,7 +134,7 @@ class MaxMindExtractor:
         country_csv = None
         blocks_csv = None
 
-        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-Country"):
+        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-Country-CSV"):
             for file in files:
                 if file.endswith("Country-Locations-en.csv"):
                     country_csv = Path(root) / file
@@ -190,7 +190,7 @@ class MaxMindExtractor:
         # Ищем CSV файлы GeoLite2-ASN
         blocks_csv = None
 
-        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-ASN"):
+        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-ASN-CSV"):
             for file in files:
                 if file.endswith("ASN-Blocks-IPv4.csv"):
                     blocks_csv = Path(root) / file
@@ -234,7 +234,7 @@ class MaxMindExtractor:
         city_csv = None
         blocks_csv = None
 
-        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-City"):
+        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-City-CSV"):
             for file in files:
                 if file.endswith("City-Locations-en.csv"):
                     city_csv = Path(root) / file
