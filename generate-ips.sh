@@ -1,12 +1,14 @@
 #!/bin/bash
 # ============================================
-# IP Generator Script v1.0
+# IP Generator Script v2.0 (MaxMind Primary)
 # ============================================
-# Генерирует списки IP адресов из различных источников:
-# - ASN (Autonomous System Numbers)
-# - Страны (Countries)
-# - Города (Cities)
+# Генерирует списки IP адресов из MaxMind GeoLite2 баз данных:
+# - ASN (Autonomous System Numbers) - из GeoLite2-ASN
+# - Страны (Countries) - из GeoLite2-Country
+# - Города (Cities) - из GeoLite2-City
 # - Прямые IP/CIDR
+#
+# MaxMind используется как основной источник данных
 # ============================================
 
 set -e  # Остановка при ошибках
@@ -170,101 +172,101 @@ download_geoip_databases() {
 }
 
 # ============================================
-# ПОЛУЧЕНИЕ IP ПО ASN
+# ПОЛУЧЕНИЕ IP ПО ASN (из MaxMind GeoLite2-ASN)
 # ============================================
 
 get_ips_from_asn() {
     local asn=$1
     local output_file=$2
 
-    # Удаляем префикс AS если есть
-    asn=${asn#AS}
-    asn=${asn#as}
+    log_info "Получение IP для ASN: ${asn} из MaxMind GeoLite2-ASN..."
 
-    log_info "Получение IP для ASN: AS${asn}..."
+    if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+        log_error "MAXMIND_LICENSE_KEY не установлен. Невозможно получить IP для ASN."
+        return 1
+    fi
 
-    # Пробуем несколько источников
-    local sources=(
-        "https://api.bgpview.io/asn/${asn}/prefixes"
-        "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS${asn}"
-    )
+    # Используем Python скрипт для извлечения из MaxMind базы
+    if python3 "${SCRIPT_DIR}/extract-ips-from-maxmind.py" \
+        --cache-dir "$CACHE_DIR" \
+        --license-key "$MAXMIND_LICENSE_KEY" \
+        --asn "$asn" \
+        --output "$output_file" \
+        --optimize 2>&1 | grep -v "^\["; then
 
-    local temp_file="${CACHE_DIR}/asn_${asn}_temp.json"
-
-    for source in "${sources[@]}"; do
-        log_info "Запрос к ${source}..."
-
-        if curl -sSL -m 30 "$source" -o "$temp_file" 2>/dev/null; then
-            # Парсим JSON и извлекаем IPv4 префиксы
-            if grep -q "prefixes" "$temp_file" 2>/dev/null; then
-                jq -r '.data.ipv4_prefixes[]?.prefix // empty' "$temp_file" 2>/dev/null >> "$output_file" && break
-                jq -r '.data.prefixes[]?.prefix // empty' "$temp_file" 2>/dev/null | grep -E '^[0-9]+\.' >> "$output_file" && break
-            fi
-        fi
-    done
-
-    rm -f "$temp_file"
-
-    local count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
-    log_success "✓ Получено $count IP префиксов для AS${asn}"
+        local count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
+        log_success "✓ Получено $count IP блоков для ${asn} из MaxMind"
+    else
+        log_error "Не удалось получить IP для ${asn}"
+        return 1
+    fi
 }
 
 # ============================================
-# ПОЛУЧЕНИЕ IP ПО СТРАНЕ
+# ПОЛУЧЕНИЕ IP ПО СТРАНЕ (из MaxMind GeoLite2-Country)
 # ============================================
 
 get_ips_from_country() {
     local country=$1
     local output_file=$2
 
-    log_info "Получение IP для страны: ${country}..."
+    log_info "Получение IP для страны: ${country} из MaxMind GeoLite2-Country..."
 
-    # Используем несколько источников
-    local sources=(
-        "https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/master/ipv4/${country,,}.cidr"
-        "https://www.ipdeny.com/ipblocks/data/aggregated/${country,,}-aggregated.zone"
-    )
+    if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+        log_error "MAXMIND_LICENSE_KEY не установлен. Невозможно получить IP для страны."
+        return 1
+    fi
 
-    for source in "${sources[@]}"; do
-        log_info "Запрос к ${source}..."
+    # Используем Python скрипт для извлечения из MaxMind базы
+    if python3 "${SCRIPT_DIR}/extract-ips-from-maxmind.py" \
+        --cache-dir "$CACHE_DIR" \
+        --license-key "$MAXMIND_LICENSE_KEY" \
+        --country "$country" \
+        --output "$output_file" \
+        --optimize 2>&1 | grep -v "^\["; then
 
-        if curl -sSL -m 30 "$source" >> "$output_file" 2>/dev/null; then
-            local count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
-            if [ "$count" -gt 0 ]; then
-                log_success "✓ Получено $count IP блоков для страны ${country}"
-                return 0
-            fi
-        fi
-    done
-
-    log_warning "Не удалось получить IP для страны ${country}"
-    return 1
+        local count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
+        log_success "✓ Получено $count IP блоков для страны ${country} из MaxMind"
+    else
+        log_error "Не удалось получить IP для страны ${country}"
+        return 1
+    fi
 }
 
 # ============================================
-# ПОЛУЧЕНИЕ IP ПО ГОРОДУ (требуется GeoLite2)
+# ПОЛУЧЕНИЕ IP ПО ГОРОДУ (из MaxMind GeoLite2-City)
 # ============================================
 
 get_ips_from_city() {
     local city_spec=$1
     local output_file=$2
 
-    log_info "Получение IP для города: ${city_spec}..."
+    log_info "Получение IP для города: ${city_spec} из MaxMind GeoLite2-City..."
 
-    # Для городов нужна GeoLite2-City база
-    local city_db="${CACHE_DIR}/GeoLite2-City.mmdb"
-
-    if [ ! -f "$city_db" ]; then
-        log_warning "GeoLite2-City.mmdb не найдена. Пропуск города ${city_spec}."
+    if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+        log_error "MAXMIND_LICENSE_KEY не установлен. Невозможно получить IP для города."
         return 1
     fi
 
-    # Здесь нужен mmdblookup или аналогичный инструмент
-    # Для простоты пропускаем (требует дополнительных зависимостей)
-    log_warning "Поиск по городам требует дополнительных инструментов (mmdblookup/geoiplookup)"
-    log_warning "Пропуск города: ${city_spec}"
+    # Используем Python скрипт для извлечения из MaxMind базы
+    if python3 "${SCRIPT_DIR}/extract-ips-from-maxmind.py" \
+        --cache-dir "$CACHE_DIR" \
+        --license-key "$MAXMIND_LICENSE_KEY" \
+        --city "$city_spec" \
+        --output "$output_file" \
+        --optimize 2>&1 | grep -v "^\["; then
 
-    return 1
+        local count=$(wc -l < "$output_file" 2>/dev/null || echo 0)
+        if [ "$count" -gt 0 ]; then
+            log_success "✓ Получено $count IP блоков для города ${city_spec} из MaxMind"
+        else
+            log_warning "Не найдено IP блоков для города ${city_spec}"
+            return 1
+        fi
+    else
+        log_error "Не удалось получить IP для города ${city_spec}"
+        return 1
+    fi
 }
 
 # ============================================

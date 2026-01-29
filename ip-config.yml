@@ -3,8 +3,18 @@
 # ============================================
 # Этот файл определяет источники IP адресов для различных списков доступа
 # GitHub Actions автоматически обработает этот файл и обновит ufw-docker-rules-v4.sh
+#
+# ⚠️ ВАЖНО: Все IP адреса извлекаются из MaxMind GeoLite2 баз данных
+# Требуется бесплатный License Key от MaxMind: https://www.maxmind.com/en/geolite2/signup
+# Добавьте MAXMIND_LICENSE_KEY в GitHub Secrets или в переменные среды
+#
+# MaxMind GeoLite2 базы данных:
+# - GeoLite2-Country: IP адреса по странам (ISO коды)
+# - GeoLite2-City: IP адреса по городам
+# - GeoLite2-ASN: IP адреса по ASN (провайдеры, облака)
+# ============================================
 
-version: "1.0"
+version: "2.0"
 
 # ============================================
 # SSH_ALLOWED_IPS - Белый список для SSH доступа
@@ -75,37 +85,42 @@ rustdesk_allowed_ips:
 # НАСТРОЙКИ ГЕНЕРАЦИИ
 # ============================================
 settings:
-  # MaxMind License Key (нужен для GeoIP баз)
-  # Получите бесплатно на https://www.maxmind.com/en/geolite2/signup
-  # Этот ключ должен быть настроен как GitHub Secret: MAXMIND_LICENSE_KEY
+  # ⚠️ ОБЯЗАТЕЛЬНО: MaxMind License Key
+  # Получите БЕСПЛАТНЫЙ ключ на https://www.maxmind.com/en/geolite2/signup
+  #
+  # Для локального использования:
+  #   export MAXMIND_LICENSE_KEY="your_key_here"
+  #   ./generate-ips.sh
+  #
+  # Для GitHub Actions:
+  #   1. Перейдите в Settings → Secrets and variables → Actions
+  #   2. Создайте секрет: MAXMIND_LICENSE_KEY
+  #   3. Вставьте ваш ключ
+  #
+  # Без этого ключа система НЕ БУДЕТ РАБОТАТЬ!
   maxmind_license_key: "${MAXMIND_LICENSE_KEY}"
 
   # Использовать кеш GeoIP баз (ускоряет генерацию)
+  # CSV базы кешируются на 7 дней
   use_geoip_cache: true
 
   # Максимальное количество IP адресов для одного списка
   # Защита от случайного добавления слишком большого количества адресов
   max_ips_per_list: 10000
 
-  # Формат вывода IP адресов
-  output_format: "cidr"  # cidr или individual
-
   # Оптимизация: объединять соседние CIDR блоки
+  # MaxMind базы содержат множество мелких блоков, оптимизация обязательна
   optimize_cidrs: true
 
   # Дедупликация: удалять дубликаты
   deduplicate: true
 
-  # Источники данных для ASN
-  asn_sources:
-    - "https://iptoasn.com/"
-    - "https://api.bgpview.io/asn/{asn}/prefixes"
-
-  # Дополнительные источники GeoIP
-  geoip_sources:
-    country: "GeoLite2-Country"
-    city: "GeoLite2-City"
-    asn: "GeoLite2-ASN"
+  # MaxMind GeoLite2 базы данных (основной источник)
+  # Автоматически скачиваются в формате CSV
+  maxmind_databases:
+    country: "GeoLite2-Country-CSV"
+    city: "GeoLite2-City-CSV"
+    asn: "GeoLite2-ASN-CSV"
 
 # ============================================
 # ПРИМЕРЫ КОНФИГУРАЦИЙ

@@ -1,0 +1,3 @@
+# Python зависимости для работы с MaxMind GeoLite2
+PyYAML>=6.0
+ipaddress>=1.0.23

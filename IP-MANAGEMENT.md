@@ -2,9 +2,21 @@
 
 Этот документ описывает систему автоматического управления IP адресами для скрипта `ufw-docker-rules-v4.sh`.
 
+## ⚠️ ВАЖНО: MaxMind GeoLite2 - основной источник данных
+
+**Все IP адреса извлекаются из официальных баз данных MaxMind GeoLite2.**
+
+Для работы системы **ОБЯЗАТЕЛЬНО** нужен бесплатный License Key:
+1. Регистрация: https://www.maxmind.com/en/geolite2/signup
+2. Создайте License Key в личном кабинете
+3. Добавьте ключ в переменные среды или GitHub Secrets
+
+Без ключа система **НЕ БУДЕТ РАБОТАТЬ**!
+
 ## 📋 Оглавление
 
 - [Обзор](#обзор)
+- [MaxMind GeoLite2](#maxmind-geolite2)
 - [Файлы системы](#файлы-системы)
 - [Быстрый старт](#быстрый-старт)
 - [Настройка ip-config.yml](#настройка-ip-configyml)
@@ -18,12 +30,47 @@
 
 ## 🎯 Обзор
 
-Система позволяет автоматически генерировать списки IP адресов из различных источников:
+Система автоматически генерирует списки IP адресов из **MaxMind GeoLite2 баз данных**:
 
-- **ASN** (Autonomous System Numbers) - все IP блоки, принадлежащие провайдеру
-- **Страны** - все IP адреса страны (по ISO коду)
-- **Города** - IP адреса конкретного города
+- **ASN** (Autonomous System Numbers) - все IP блоки провайдера (из GeoLite2-ASN)
+- **Страны** - все IP адреса страны по ISO коду (из GeoLite2-Country)
+- **Города** - IP адреса конкретного города (из GeoLite2-City)
 - **Прямые IP/CIDR** - ваши собственные IP адреса
+
+---
+
+## 🗄️ MaxMind GeoLite2
+
+### Что такое MaxMind GeoLite2?
+
+MaxMind GeoLite2 - это бесплатные геолокационные базы данных, содержащие актуальную информацию об IP адресах во всем мире. Базы обновляются еженедельно.
+
+### Почему MaxMind?
+
+- ✅ **Официальный источник** - признанный стандарт индустрии
+- ✅ **Бесплатно** - для некоммерческого использования
+- ✅ **Точность** - самые актуальные данные
+- ✅ **Полнота** - охват всех стран и ASN
+- ✅ **Регулярные обновления** - еженедельно
+
+### Базы данных GeoLite2
+
+| База | Содержит | Использование |
+|------|----------|---------------|
+| **GeoLite2-Country** | IP блоки по странам | Получение всех IP страны по ISO коду (RU, US, DE) |
+| **GeoLite2-City** | IP блоки по городам | Получение IP конкретного города (Moscow, London) |
+| **GeoLite2-ASN** | IP блоки по ASN | Получение IP провайдера (AS13335=Cloudflare) |
+
+### Получение License Key
+
+1. **Регистрация:** https://www.maxmind.com/en/geolite2/signup
+2. **Создание ключа:**
+   - Войдите в аккаунт
+   - Перейдите: Account → Manage License Keys
+   - Создайте новый ключ
+3. **Использование:**
+   - Локально: `export MAXMIND_LICENSE_KEY="ваш_ключ"`
+   - GitHub: добавьте в Secrets как `MAXMIND_LICENSE_KEY`
 
 Сгенерированные IP автоматически добавляются в три списка:
 - `SSH_ALLOWED_IPS` - доступ к SSH
@@ -53,6 +100,14 @@
 
 ## 🚀 Быстрый старт
 
+### 0. 🔑 Получите MaxMind License Key (ОБЯЗАТЕЛЬНО!)
+
+**БЕЗ ЭТОГО ШАГА СИСТЕМА НЕ БУДЕТ РАБОТАТЬ!**
+
+1. Зарегистрируйтесь: https://www.maxmind.com/en/geolite2/signup
+2. Создайте License Key в личном кабинете
+3. Сохраните ключ - он понадобится далее
+
 ### 1. Настройте конфигурацию
 
 Отредактируйте `ip-config.yml`:
@@ -62,13 +117,18 @@ ssh_allowed_ips:
   direct_ips:
     - "203.0.113.0/24"    # Ваш офисный IP
   asn:
-    - "AS13335"            # Cloudflare
+    - "AS13335"            # Cloudflare (из MaxMind GeoLite2-ASN)
+  countries:
+    - "RU"                 # Россия (из MaxMind GeoLite2-Country)
 ```
 
 ### 2. Локальный запуск (опционально)
 
 ```bash
-# Генерация IP списков
+# Установите ключ в переменные среды
+export MAXMIND_LICENSE_KEY="ваш_ключ_здесь"
+
+# Генерация IP списков (загрузит MaxMind базы)
 ./generate-ips.sh
 
 # Обновление UFW скрипта
@@ -80,9 +140,17 @@ cat generated-ips/ssh_allowed_ips.txt
 
 ### 3. GitHub Actions (автоматически)
 
-1. Добавьте секрет `MAXMIND_LICENSE_KEY` в GitHub (если используете GeoIP)
+1. **ОБЯЗАТЕЛЬНО!** Добавьте секрет `MAXMIND_LICENSE_KEY`:
+   - Settings → Secrets and variables → Actions
+   - New repository secret
+   - Имя: `MAXMIND_LICENSE_KEY`
+   - Значение: ваш ключ от MaxMind
+
 2. Коммит изменений в `ip-config.yml`
-3. Workflow автоматически обновит скрипт
+3. Workflow автоматически:
+   - Загрузит MaxMind GeoLite2 базы (CSV)
+   - Извлечет IP адреса
+   - Обновит скрипт
 
 ---
 
@@ -133,9 +201,11 @@ settings:
 
 ## 🌍 Источники IP адресов
 
+**Все данные извлекаются из MaxMind GeoLite2 баз данных!**
+
 ### 1. Прямые IP адреса (direct_ips)
 
-Самый простой способ - указать IP напрямую:
+Самый простой способ - указать IP напрямую (не требует MaxMind):
 
 ```yaml
 ssh_allowed_ips:
@@ -151,6 +221,8 @@ ssh_allowed_ips:
 
 ### 2. ASN (Autonomous System Numbers)
 
+**Источник: MaxMind GeoLite2-ASN CSV база**
+
 Получить все IP блоки провайдера или компании:
 
 ```yaml
@@ -159,8 +231,13 @@ docker_allowed_ips:
     - "AS13335"    # Cloudflare
     - "AS15169"    # Google
     - "AS16509"    # Amazon AWS
-    - "AS32934"    # Facebook
+    - "AS32934"    # Facebook (Meta)
 ```
+
+**Как это работает:**
+1. Система загружает GeoLite2-ASN-CSV базу от MaxMind
+2. Извлекает все IPv4 блоки для указанного ASN
+3. Оптимизирует и объединяет CIDR блоки
 
 **Когда использовать:**
 - Нужен доступ от конкретного провайдера
@@ -168,11 +245,13 @@ docker_allowed_ips:
 - Доступ к CDN (Cloudflare, Akamai)
 
 **Как найти ASN:**
-- Сайт: https://bgp.he.net/
+- MaxMind: https://www.maxmind.com/en/geoip-demo (введите IP)
+- BGP: https://bgp.he.net/
 - Команда: `whois -h whois.cymru.com " -v your-ip-address"`
-- Поиск: Google "company name ASN"
 
 ### 3. Страны (countries)
+
+**Источник: MaxMind GeoLite2-Country CSV база**
 
 Разрешить доступ из целой страны:
 
@@ -185,7 +264,16 @@ rustdesk_allowed_ips:
     - "GB"    # Великобритания
 ```
 
+**Как это работает:**
+1. Система загружает GeoLite2-Country-CSV базу от MaxMind
+2. Находит geoname_id для указанной страны
+3. Извлекает все IPv4 блоки для этой страны
+4. Оптимизирует результат
+
 **⚠️ ВНИМАНИЕ:** Может добавить **ТЫСЯЧИ** IP адресов!
+- RU (Россия): ~7,000 IP блоков
+- US (США): ~150,000 IP блоков
+- CN (Китай): ~20,000 IP блоков
 
 **ISO коды стран:** https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
 
@@ -195,6 +283,8 @@ rustdesk_allowed_ips:
 - Compliance требования
 
 ### 4. Города (cities)
+
+**Источник: MaxMind GeoLite2-City CSV база**
 
 Доступ из конкретного города:
 
@@ -206,11 +296,18 @@ ssh_allowed_ips:
     - "GB/England/London"
 ```
 
-**Требуется:**
-- MaxMind GeoLite2-City база данных
-- Дополнительные инструменты (`mmdblookup`)
+**Как это работает:**
+1. Система загружает GeoLite2-City-CSV базу от MaxMind
+2. Парсит спецификацию города (Страна/Город)
+3. Находит geoname_id для города
+4. Извлекает IPv4 блоки
 
-**Формат:** `Страна/Регион/Город` или `Страна/Город`
+**Формат:** `Страна/Город` или `Страна/Регион/Город`
+
+**Примеры:**
+- `RU/Moscow` - Москва, Россия
+- `US/New York` - Нью-Йорк, США
+- `GB/London` - Лондон, Великобритания
 
 ---
 
@@ -222,14 +319,21 @@ ssh_allowed_ips:
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl jq python3 python3-pip
-pip3 install PyYAML
+pip3 install -r requirements.txt
 ```
 
 **CentOS/RHEL:**
 ```bash
 sudo yum install -y curl jq python3 python3-pip
-pip3 install PyYAML
+pip3 install -r requirements.txt
 ```
+
+**Что устанавливается:**
+- `curl` - для скачивания файлов
+- `jq` - для парсинга JSON
+- `python3` - для работы с MaxMind CSV базами
+- `PyYAML` - для парсинга конфигурации
+- `ipaddress` - для оптимизации CIDR блоков
 
 ### Генерация IP списков
 

@@ -1,10 +1,20 @@
 # UFW Rules for Docker with IP Management
 
-Комплексная система для управления правилами UFW в Docker окружении с автоматической генерацией IP адресов из различных источников.
+Комплексная система для управления правилами UFW в Docker окружении с автоматической генерацией IP адресов из **MaxMind GeoLite2** баз данных.
+
+## ⚠️ ВАЖНО: Требуется MaxMind License Key
+
+**Система использует MaxMind GeoLite2 как основной источник IP адресов.**
+
+Для работы необходим бесплатный License Key:
+1. Регистрация: https://www.maxmind.com/en/geolite2/signup
+2. Добавьте ключ в переменные среды: `MAXMIND_LICENSE_KEY`
+3. Для GitHub Actions: добавьте в Secrets
 
 ## 📋 Основные возможности
 
-- **Автоматическое управление IP адресами** из ASN, стран, городов и CIDR
+- **MaxMind GeoLite2** - официальный источник IP данных (ASN, страны, города)
+- **Автоматическое управление IP адресами** с еженедельным обновлением баз
 - **Раздельные белые списки** для SSH, Docker и RustDesk
 - **GitHub Actions автоматизация** для ежедневного обновления IP
 - **Настраиваемые порты** для всех сервисов
@@ -13,6 +23,14 @@
 - **Оптимизация** CIDR блоков для эффективности
 
 ## 🚀 Быстрый старт
+
+### 0. 🔑 Получите MaxMind License Key
+
+**ОБЯЗАТЕЛЬНЫЙ ШАГ!** Без ключа система не будет работать.
+
+1. Регистрация: https://www.maxmind.com/en/geolite2/signup
+2. Создайте License Key в личном кабинете
+3. Сохраните ключ
 
 ### 1. Клонирование репозитория
 
@@ -30,9 +48,9 @@ ssh_allowed_ips:
   direct_ips:
     - "203.0.113.0/24"    # Ваш офис
   asn:
-    - "AS13335"           # Cloudflare
+    - "AS13335"           # Cloudflare (MaxMind GeoLite2-ASN)
   countries:
-    - "RU"                # Россия
+    - "RU"                # Россия (MaxMind GeoLite2-Country)
 ```
 
 ### 3. Генерация IP списков (локально)
@@ -40,9 +58,12 @@ ssh_allowed_ips:
 ```bash
 # Установка зависимостей
 sudo apt-get install -y curl jq python3 python3-pip
-pip3 install PyYAML
+pip3 install -r requirements.txt
 
-# Генерация IP адресов
+# Установите MaxMind License Key
+export MAXMIND_LICENSE_KEY="ваш_ключ"
+
+# Генерация IP адресов (загрузит MaxMind базы)
 ./generate-ips.sh
 
 # Обновление UFW скрипта
@@ -54,24 +75,41 @@ sudo ./ufw-docker-rules-v4.sh
 
 ### 4. GitHub Actions автоматизация
 
-1. Добавьте секрет `MAXMIND_LICENSE_KEY` в репозиторий
+1. **Добавьте секрет** `MAXMIND_LICENSE_KEY`:
+   - Settings → Secrets → New repository secret
+   - Имя: `MAXMIND_LICENSE_KEY`
+   - Значение: ваш ключ от MaxMind
+
 2. Коммитьте изменения в `ip-config.yml`
-3. Workflow автоматически обновит скрипт
+3. Workflow автоматически:
+   - Загрузит MaxMind GeoLite2 базы (CSV)
+   - Извлечет IP адреса
+   - Обновит скрипт
 
 ## 📁 Структура проекта
 
 ```
-├── ufw-docker-rules-v4.sh     # Основной UFW скрипт
-├── ip-config.yml              # Конфигурация источников IP
-├── generate-ips.sh            # Генератор IP списков
-├── update-ufw-script.sh       # Обновление UFW скрипта
-├── IP-MANAGEMENT.md           # Полная документация
+├── ufw-docker-rules-v4.sh           # Основной UFW скрипт
+├── ip-config.yml                    # Конфигурация источников IP
+├── generate-ips.sh                  # Генератор IP списков
+├── extract-ips-from-maxmind.py      # Извлечение IP из MaxMind CSV баз
+├── update-ufw-script.sh             # Обновление UFW скрипта
+├── requirements.txt                 # Python зависимости
+├── IP-MANAGEMENT.md                 # Полная документация
+├── README.md                        # Этот файл
 ├── .github/workflows/
-│   ├── update-ips.yml         # Автообновление IP
-│   └── GeoLite.yml            # GeoIP базы данных
-├── generated-ips/             # Сгенерированные списки
-├── backups/                   # Резервные копии
-└── .cache/                    # Кеш GeoIP баз
+│   ├── update-ips.yml               # Автообновление IP
+│   └── GeoLite.yml                  # Workflow для GeoIP баз
+├── generated-ips/                   # Сгенерированные списки (создается автоматически)
+│   ├── ssh_allowed_ips.txt
+│   ├── docker_allowed_ips.txt
+│   └── rustdesk_allowed_ips.txt
+├── backups/                         # Резервные копии (создается автоматически)
+└── .cache/                          # Кеш MaxMind CSV баз (создается автоматически)
+    └── csv/
+        ├── GeoLite2-Country-CSV/
+        ├── GeoLite2-City-CSV/
+        └── GeoLite2-ASN-CSV/
 ```
 
 ## 📚 Документация
