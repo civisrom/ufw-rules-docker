@@ -25,12 +25,13 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/ip-config.yml}"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/generated-ips}"
-CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/.cache}"
+CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/maxmind-data}"
 MAXMIND_LICENSE_KEY="${MAXMIND_LICENSE_KEY:-}"
 
 # Создаем директории
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$CACHE_DIR"
+mkdir -p "$CACHE_DIR/.metadata"
 
 # ============================================
 # ФУНКЦИИ ЛОГИРОВАНИЯ
@@ -393,7 +394,12 @@ generate_ip_list() {
     if [ -n "$asns" ]; then
         echo "$asns" | while read -r asn; do
             if [ -n "$asn" ]; then
-                get_ips_from_asn "$asn" "$raw_file"
+                # Используем временный файл для каждого ASN, затем добавляем в raw_file
+                local asn_temp="${OUTPUT_DIR}/${list_name}_asn_${asn}_temp.txt"
+                if get_ips_from_asn "$asn" "$asn_temp"; then
+                    cat "$asn_temp" >> "$raw_file"
+                    rm -f "$asn_temp"
+                fi
             fi
         done
     fi
@@ -404,7 +410,12 @@ generate_ip_list() {
     if [ -n "$countries" ]; then
         echo "$countries" | while read -r country; do
             if [ -n "$country" ]; then
-                get_ips_from_country "$country" "$raw_file"
+                # Используем временный файл для каждой страны, затем добавляем в raw_file
+                local country_temp="${OUTPUT_DIR}/${list_name}_country_${country}_temp.txt"
+                if get_ips_from_country "$country" "$country_temp"; then
+                    cat "$country_temp" >> "$raw_file"
+                    rm -f "$country_temp"
+                fi
             fi
         done
     fi
@@ -415,7 +426,13 @@ generate_ip_list() {
     if [ -n "$cities" ]; then
         echo "$cities" | while read -r city; do
             if [ -n "$city" ]; then
-                get_ips_from_city "$city" "$raw_file"
+                # Используем временный файл для каждого города, затем добавляем в raw_file
+                local city_safe=$(echo "$city" | tr '/' '_')
+                local city_temp="${OUTPUT_DIR}/${list_name}_city_${city_safe}_temp.txt"
+                if get_ips_from_city "$city" "$city_temp"; then
+                    cat "$city_temp" >> "$raw_file"
+                    rm -f "$city_temp"
+                fi
             fi
         done
     fi
@@ -460,7 +477,7 @@ main() {
 
     log_info "Используется конфигурация: $CONFIG_FILE"
     log_info "Выходная директория: $OUTPUT_DIR"
-    log_info "Кеш директория: $CACHE_DIR"
+    log_info "Директория MaxMind данных: $CACHE_DIR"
 
     # Проверка MaxMind License Key
     if [ -z "$MAXMIND_LICENSE_KEY" ]; then

@@ -1,6 +1,9 @@
-# Cache directories
-.cache/
+# Cache directories (deprecated - now using maxmind-data/)
+# .cache/
 *.cache
+
+# MaxMind temporary files (ZIP archives are auto-deleted but just in case)
+maxmind-data/*.zip
 
 # Generated IP lists (optional - uncomment if you don't want to commit them)
 # generated-ips/
