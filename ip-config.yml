@@ -61,8 +61,6 @@ docker_allowed_ips:
     - "AS29194"
     - "AS203451"
     - "AS203561"
-    #- "AS15169"  # Google
-    #- "AS16509"  # Amazon AWS
   countries:
     # - "US"
 
