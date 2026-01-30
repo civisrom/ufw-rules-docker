@@ -126,19 +126,13 @@ update_section() {
     done < <(read_ips_from_file "$ip_file")
 
     local ip_count=${#ips[@]}
-
-    if [ "$ip_count" -eq 0 ]; then
-        log_warning "Нет IP адресов в $ip_file"
-        return 0
-    fi
-
     log_info "Найдено IP адресов: $ip_count"
 
     # Создаем временный файл
     local temp_file=$(mktemp)
 
     # Используем awk для замены секции
-    awk -v section="$section_name" -v count="$ip_count" '
+    awk -v section="$section_name" -v ip_file="$ip_file" -v ip_count="$ip_count" '
     BEGIN {
         in_section = 0
         section_found = 0
@@ -159,7 +153,11 @@ update_section() {
         if (/^[[:space:]]*\)/) {
             # Вставляем новые IP перед закрывающей скобкой
             if (new_content_added == 0) {
-                system("cat '"$ip_file"' | grep -v \"^#\" | grep -v \"^[[:space:]]*$\" | awk '\''{print \"    \\\"\" $0 \"\\\"\"}'\''")
+                if (ip_count > 0) {
+                    # Если есть IP адреса - вставляем их
+                    system("cat \"" ip_file "\" | grep -v \"^#\" | grep -v \"^[[:space:]]*$\" | awk '\''{print \"    \\\"\" $0 \"\\\"\"}'\''")
+                }
+                # Если IP адресов нет - просто оставляем пустой массив
                 new_content_added = 1
             }
             print $0
@@ -190,7 +188,12 @@ update_section() {
 
     # Заменяем оригинальный файл
     mv "$temp_file" "$script_file"
-    log_success "✓ Секция $section_name обновлена ($ip_count IP)"
+
+    if [ "$ip_count" -eq 0 ]; then
+        log_success "✓ Секция $section_name очищена (0 IP)"
+    else
+        log_success "✓ Секция $section_name обновлена ($ip_count IP)"
+    fi
 }
 
 # ============================================
