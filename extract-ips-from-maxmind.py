@@ -41,8 +41,11 @@ def log_error(message):
 class MaxMindExtractor:
     def __init__(self, cache_dir: str):
         self.cache_dir = Path(cache_dir).resolve()
-        self.csv_dir = self.cache_dir / "csv"
+        # Используем maxmind-data для хранения CSV баз
+        self.csv_dir = self.cache_dir
+        self.metadata_dir = self.cache_dir / ".metadata"
         self.csv_dir.mkdir(parents=True, exist_ok=True)
+        self.metadata_dir.mkdir(parents=True, exist_ok=True)
 
     def extract_csv_from_mmdb(self, db_name: str) -> bool:
         """Извлекает CSV файлы из .mmdb базы данных"""
@@ -52,29 +55,71 @@ class MaxMindExtractor:
         # Нужно скачать CSV версию базы
         return False
 
+    def get_remote_etag(self, url: str) -> str:
+        """Получает ETag удаленного файла через HEAD запрос"""
+        try:
+            req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                etag = response.headers.get('ETag', '').strip('"')
+                return etag
+        except Exception as e:
+            log_warning(f"Не удалось получить ETag: {e}")
+            return ""
+
+    def get_saved_etag(self, db_name: str) -> str:
+        """Читает сохраненный ETag из метаданных"""
+        etag_file = self.metadata_dir / f"{db_name}-etag.txt"
+        if etag_file.exists():
+            try:
+                return etag_file.read_text().strip()
+            except:
+                return ""
+        return ""
+
+    def save_etag(self, db_name: str, etag: str):
+        """Сохраняет ETag в метаданные"""
+        etag_file = self.metadata_dir / f"{db_name}-etag.txt"
+        try:
+            etag_file.write_text(etag)
+        except Exception as e:
+            log_warning(f"Не удалось сохранить ETag: {e}")
+
     def download_csv_database(self, db_name: str, license_key: str) -> bool:
-        """Скачивает CSV версию базы данных MaxMind с обработкой ошибок"""
-        log_info(f"Скачивание CSV базы данных: {db_name}...")
+        """Скачивает CSV версию базы данных MaxMind с проверкой актуальности через ETag"""
+        log_info(f"Проверка базы данных: {db_name}...")
 
         url = f"https://download.maxmind.com/app/geoip_download?edition_id={db_name}&license_key={license_key}&suffix=zip"
         zip_path = self.cache_dir / f"{db_name}.zip"
+        extract_dir = self.csv_dir / db_name
 
         try:
-            # Проверяем возраст файла (кеш на 7 дней)
-            if zip_path.exists():
-                file_age = time.time() - zip_path.stat().st_mtime
-                if file_age < 7 * 24 * 3600:  # 7 дней
-                    log_info(f"CSV база {db_name} актуальна (возраст: {int(file_age / 86400)} дней)")
+            # Проверяем наличие распакованной базы
+            if extract_dir.exists():
+                # Получаем удаленный ETag
+                log_info(f"Проверка актуальности {db_name}...")
+                remote_etag = self.get_remote_etag(url)
+                saved_etag = self.get_saved_etag(db_name)
+
+                if remote_etag and saved_etag and remote_etag == saved_etag:
+                    log_success(f"✓ {db_name} актуальна (ETag совпадает)")
                     return True
+                elif remote_etag and saved_etag:
+                    log_info(f"{db_name} устарела, обновление...")
+                else:
+                    log_info(f"{db_name} будет обновлена (ETag недоступен)")
 
             # Скачиваем с повторными попытками
             log_info(f"Загрузка {db_name} CSV...")
             max_retries = 3
+            response_etag = ""
+
             for attempt in range(max_retries):
                 try:
                     # Скачиваем с timeout
                     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
                     with urllib.request.urlopen(req, timeout=60) as response:
+                        # Сохраняем ETag из ответа
+                        response_etag = response.headers.get('ETag', '').strip('"')
                         with open(zip_path, 'wb') as out_file:
                             out_file.write(response.read())
                     break  # Успешно скачали
@@ -87,11 +132,15 @@ class MaxMindExtractor:
 
             # Распаковываем
             log_info(f"Распаковка {db_name}...")
-            extract_dir = self.csv_dir / db_name
             extract_dir.mkdir(parents=True, exist_ok=True)
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_dir)
+
+            # Сохраняем ETag
+            if response_etag:
+                self.save_etag(db_name, response_etag)
+                log_info(f"Сохранен ETag: {response_etag[:16]}...")
 
             # Удаляем временный ZIP файл для экономии места
             try:
@@ -134,7 +183,7 @@ class MaxMindExtractor:
         country_csv = None
         blocks_csv = None
 
-        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-Country"):
+        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-Country-CSV"):
             for file in files:
                 if file.endswith("Country-Locations-en.csv"):
                     country_csv = Path(root) / file
@@ -152,7 +201,10 @@ class MaxMindExtractor:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if row.get('country_iso_code') == country_code:
-                        geoname_ids.add(row.get('geoname_id'))
+                        # Конвертируем geoname_id в строку для надежного сравнения
+                        gid = str(row.get('geoname_id', '')).strip()
+                        if gid:
+                            geoname_ids.add(gid)
         except Exception as e:
             log_error(f"Ошибка чтения {country_csv}: {e}")
             return ips
@@ -166,8 +218,10 @@ class MaxMindExtractor:
             with open(blocks_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get('geoname_id') in geoname_ids or \
-                       row.get('registered_country_geoname_id') in geoname_ids:
+                    # Конвертируем geoname_id в строку для сравнения
+                    gid = str(row.get('geoname_id', '')).strip()
+                    reg_gid = str(row.get('registered_country_geoname_id', '')).strip()
+                    if gid in geoname_ids or reg_gid in geoname_ids:
                         network = row.get('network')
                         if network:
                             ips.add(network)
@@ -190,7 +244,7 @@ class MaxMindExtractor:
         # Ищем CSV файлы GeoLite2-ASN
         blocks_csv = None
 
-        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-ASN"):
+        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-ASN-CSV"):
             for file in files:
                 if file.endswith("ASN-Blocks-IPv4.csv"):
                     blocks_csv = Path(root) / file
@@ -204,7 +258,9 @@ class MaxMindExtractor:
             with open(blocks_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get('autonomous_system_number') == asn_number:
+                    # MaxMind CSV хранит ASN как число, конвертируем в строку для сравнения
+                    csv_asn = str(row.get('autonomous_system_number', '')).strip()
+                    if csv_asn == asn_number:
                         network = row.get('network')
                         if network:
                             ips.add(network)
@@ -234,7 +290,7 @@ class MaxMindExtractor:
         city_csv = None
         blocks_csv = None
 
-        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-City"):
+        for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-City-CSV"):
             for file in files:
                 if file.endswith("City-Locations-en.csv"):
                     city_csv = Path(root) / file
@@ -253,7 +309,10 @@ class MaxMindExtractor:
                 for row in reader:
                     if (row.get('country_iso_code') == country and
                         row.get('city_name', '').lower() == city.lower()):
-                        geoname_ids.add(row.get('geoname_id'))
+                        # Конвертируем geoname_id в строку для надежного сравнения
+                        gid = str(row.get('geoname_id', '')).strip()
+                        if gid:
+                            geoname_ids.add(gid)
         except Exception as e:
             log_error(f"Ошибка чтения {city_csv}: {e}")
             return ips
@@ -267,7 +326,9 @@ class MaxMindExtractor:
             with open(blocks_csv, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get('geoname_id') in geoname_ids:
+                    # Конвертируем geoname_id в строку для сравнения
+                    gid = str(row.get('geoname_id', '')).strip()
+                    if gid in geoname_ids:
                         network = row.get('network')
                         if network:
                             ips.add(network)

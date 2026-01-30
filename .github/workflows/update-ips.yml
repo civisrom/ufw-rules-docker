@@ -20,6 +20,7 @@ on:
       - 'ip-config.yml'
       - 'generate-ips.sh'
       - 'update-ufw-script.sh'
+      - 'extract-ips-from-maxmind.py'
     branches:
       - main
       - claude/**
@@ -52,13 +53,17 @@ jobs:
           pip install -r requirements.txt
           chmod +x generate-ips.sh update-ufw-script.sh extract-ips-from-maxmind.py
 
-      - name: Cache GeoIP databases
+      - name: Cache MaxMind databases
         uses: actions/cache@v3
         with:
-          path: .cache
-          key: geoip-${{ github.run_id }}
+          path: |
+            maxmind-data/GeoLite2-ASN-CSV
+            maxmind-data/GeoLite2-Country-CSV
+            maxmind-data/GeoLite2-City-CSV
+            maxmind-data/.metadata
+          key: maxmind-${{ hashFiles('maxmind-data/.metadata/*-etag.txt') }}
           restore-keys: |
-            geoip-
+            maxmind-
 
       - name: Generate IP lists
         env:
@@ -77,12 +82,16 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          if git diff --quiet ufw-docker-rules-v4.sh; then
+          # Проверяем изменения в UFW скрипте, IP списках и MaxMind базах
+          git add -N maxmind-data/ generated-ips/ ufw-docker-rules-v4.sh
+
+          if git diff --quiet HEAD -- ufw-docker-rules-v4.sh generated-ips/ maxmind-data/; then
             echo "changes=false" >> $GITHUB_OUTPUT
-            echo "Нет изменений в UFW скрипте"
+            echo "Нет изменений"
           else
             echo "changes=true" >> $GITHUB_OUTPUT
-            echo "Обнаружены изменения в UFW скрипте"
+            echo "Обнаружены изменения:"
+            git diff --stat HEAD -- ufw-docker-rules-v4.sh generated-ips/ maxmind-data/
           fi
 
       - name: Generate statistics
@@ -115,6 +124,11 @@ jobs:
           # Добавляем изменения
           git add ufw-docker-rules-v4.sh
           git add generated-ips/*.txt
+          git add maxmind-data/
+
+          # Показываем что будет закоммичено
+          echo "Изменения для коммита:"
+          git status --short
 
           # Создаем коммит
           cat << EOF > commit-msg.txt
