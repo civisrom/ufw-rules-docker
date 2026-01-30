@@ -30,6 +30,7 @@ ssh_allowed_ips:
   # Получает все IP адреса, принадлежащие указанным ASN
   asn:
     - "AS48004"
+    - "AS39248"
     #- "AS13335"  # Cloudflare
     #- "AS15169"  # Google
   # Страны (ISO 3166-1 alpha-2 коды)
@@ -61,6 +62,12 @@ docker_allowed_ips:
     - "AS29194"
     - "AS203451"
     - "AS203561"
+#    - "AS42239"
+    - "AS39248"
+    - "AS13174"
+    - "AS60490"
+    - "AS8359"
+    
   countries:
     # - "US"
 
