@@ -84,7 +84,7 @@ rustdesk_allowed_ips:
     #- "2.5.2.0/23"
   asn:
     #- "AS13335"  # Cloudflare
-    - "AS48004
+    - "AS48004"
     - "AS39248"
     - "AS201776"
     - "AS216033"
