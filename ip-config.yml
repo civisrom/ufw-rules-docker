@@ -67,6 +67,7 @@ docker_allowed_ips:
     - "AS13174"
     - "AS60490"
     - "AS8359"
+    - "AS42239"
     
   countries:
     # - "US"
@@ -81,9 +82,13 @@ rustdesk_allowed_ips:
   direct_ips:
     #- "2.5.2.0/23"
     #- "2.5.2.0/23"
-
   asn:
     #- "AS13335"  # Cloudflare
+    - "AS48004
+    - "AS39248"
+    - "AS201776"
+    - "AS216033"
+    - "AS198293"
 
   countries:
     # - "RU"
