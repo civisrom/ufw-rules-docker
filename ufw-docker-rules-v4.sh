@@ -998,7 +998,9 @@ delete_rules_by_comment() {
     log_info "Начало удаления правил с маркером: $marker"
     
     local total_deleted=0
-    local max_iterations=1000  # Защита от бесконечного цикла
+    local failed_deletions=0
+    local max_iterations=5000  # Увеличено с 1000 до 5000 для большого количества правил
+    local max_failures=10      # Максимум последовательных ошибок перед остановкой
     local iteration=0
     
     # Сначала подсчитаем сколько правил нужно удалить
@@ -1045,25 +1047,44 @@ delete_rules_by_comment() {
         if [ -z "$first_rule" ] || ! [[ "$first_rule" =~ ^[0-9]+$ ]]; then
             log_error "Не удалось извлечь номер правила из: $rule_line"
             echo -e " ${RED}✗${NC} Ошибка извлечения номера правила"
-            break
+            failed_deletions=$((failed_deletions + 1))
+
+            # Если много ошибок подряд - останавливаемся
+            if [ $failed_deletions -ge $max_failures ]; then
+                echo -e " ${RED}✗${NC} Слишком много ошибок подряд ($failed_deletions). Остановка."
+                log_error "Остановка удаления: $failed_deletions последовательных ошибок"
+                break
+            fi
+            continue
         fi
         
         # Удаляем найденное правило
         if [ "$DRY_RUN" = false ]; then
             if echo "y" | ufw delete $first_rule > /dev/null 2>&1; then
                 total_deleted=$((total_deleted + 1))
-                
-                # Показываем прогресс каждые 10 правил
-                if [ $((total_deleted % 10)) -eq 0 ]; then
+                failed_deletions=0  # Сбрасываем счетчик ошибок при успехе
+
+                # Показываем прогресс каждые 50 правил (было 10)
+                if [ $((total_deleted % 50)) -eq 0 ]; then
                     echo -e " ${GREEN}✓${NC} Удалено $total_deleted/$initial_count правил..."
                 fi
-                
+
                 log_success "Удалено правило #$first_rule с маркером '$marker'"
-                sleep 0.1  # Небольшая пауза для стабильности
+                sleep 0.05  # Уменьшена пауза с 0.1 до 0.05 для ускорения
             else
-                log_error "Не удалось удалить правило #$first_rule"
-                echo -e " ${RED}✗${NC} Ошибка удаления правила #$first_rule"
-                break  # Выходим при ошибке
+                failed_deletions=$((failed_deletions + 1))
+                log_error "Не удалось удалить правило #$first_rule (попытка $failed_deletions/$max_failures)"
+                echo -e " ${YELLOW}⚠${NC} Ошибка удаления правила #$first_rule (попытка $failed_deletions)"
+
+                # Если много ошибок подряд - останавливаемся
+                if [ $failed_deletions -ge $max_failures ]; then
+                    echo -e " ${RED}✗${NC} Слишком много ошибок подряд ($failed_deletions). Остановка."
+                    log_error "Остановка удаления: $failed_deletions последовательных ошибок"
+                    break
+                fi
+
+                # При единичной ошибке - продолжаем с небольшой паузой
+                sleep 0.5
             fi
         else
             echo -e " ${BLUE}[DRY-RUN]${NC} Удалить правило #$first_rule: $(echo "$rule_line" | cut -d'#' -f2-)"
@@ -1072,21 +1093,37 @@ delete_rules_by_comment() {
         fi
     done
     
-    echo -e " ${GREEN}Успешно удалено: $total_deleted из $initial_count правил${NC}"
-    log_info "Удалено $total_deleted из $initial_count правил с маркером '$marker'"
-    
-    # Проверяем, остались ли еще правила с этим маркером
+    # Проверка результата
     local remaining=$(ufw status numbered 2>/dev/null | grep -F "$marker" | wc -l)
-    if [ $remaining -gt 0 ]; then
-        echo -e " ${RED}⚠ ВНИМАНИЕ: Осталось $remaining правил с маркером '$marker'${NC}"
-        log_warning "Осталось $remaining правил с маркером '$marker'"
-        
+
+    if [ $remaining -eq 0 ]; then
+        echo -e " ${GREEN}✓${NC} Удалено правил: $total_deleted/$initial_count (все успешно удалены)"
+        log_success "Успешно удалены все правила с маркером '$marker': $total_deleted"
+    elif [ $remaining -lt $initial_count ]; then
+        echo -e " ${YELLOW}⚠${NC} Частичное удаление: $total_deleted удалено, $remaining осталось"
+        log_warning "Частичное удаление правил '$marker': удалено $total_deleted, осталось $remaining"
+
         # Показываем оставшиеся правила
         echo -e " ${YELLOW}Оставшиеся правила:${NC}"
         ufw status numbered 2>/dev/null | grep -F "$marker" | head -10
         if [ $remaining -gt 10 ]; then
             echo -e " ${BLUE}... и еще $((remaining - 10)) правил${NC}"
         fi
+    else
+        echo -e " ${RED}✗${NC} Не удалось удалить правила: осталось $remaining из $initial_count"
+        log_error "Не удалось удалить правила '$marker': осталось $remaining"
+
+        # Показываем оставшиеся правила
+        echo -e " ${YELLOW}Оставшиеся правила:${NC}"
+        ufw status numbered 2>/dev/null | grep -F "$marker" | head -10
+        if [ $remaining -gt 10 ]; then
+            echo -e " ${BLUE}... и еще $((remaining - 10)) правил${NC}"
+        fi
+    fi
+
+    if [ $iteration -ge $max_iterations ]; then
+        echo -e " ${RED}✗${NC} ДОСТИГНУТ ЛИМИТ ИТЕРАЦИЙ ($max_iterations). Осталось $remaining правил."
+        log_error "Достигнут лимит итераций при удалении '$marker': осталось $remaining правил"
     fi
     
     return 0
