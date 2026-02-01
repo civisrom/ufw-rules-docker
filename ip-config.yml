@@ -68,6 +68,8 @@ docker_allowed_ips:
     - "AS60490"
     - "AS8359"
     - "AS42239"
+    - "AS62041"
+    - "AS211157"
     
   countries:
     # - "US"
