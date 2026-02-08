@@ -75,9 +75,10 @@ jobs:
 
       - name: Update UFW scripts
         run: |
-          echo "Обновление UFW скриптов (v4 + v6)..."
+          echo "Обновление UFW скриптов (режим из конфигурации)..."
           chmod +x update-ufw-script.sh
-          ./update-ufw-script.sh --both
+          # Без параметров - использует generation.mode из ip-config.yml
+          ./update-ufw-script.sh
 
       - name: Check for changes
         id: check_changes

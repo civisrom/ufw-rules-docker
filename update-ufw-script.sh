@@ -25,9 +25,11 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IP_DIR="${IP_DIR:-${SCRIPT_DIR}/generated-ips}"
 BACKUP_DIR="${BACKUP_DIR:-${SCRIPT_DIR}/backups}"
+CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/ip-config.yml}"
 
 # Режим работы (v4, v6, или both)
-MODE="${1:-v4}"
+# Если не передан параметр, читаем из конфигурации
+MODE="${1:-}"
 
 # ============================================
 # ФУНКЦИИ ЛОГИРОВАНИЯ
@@ -35,6 +37,30 @@ MODE="${1:-v4}"
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
+}
+
+get_config_mode() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "both"  # По умолчанию
+        return
+    fi
+
+    # Пытаемся прочитать generation.mode из конфигурации
+    if command -v yq &> /dev/null; then
+        local mode=$(yq eval ".generation.mode" "$CONFIG_FILE" 2>/dev/null || echo "both")
+        echo "$mode"
+    else
+        python3 << EOF
+import yaml
+try:
+    with open('$CONFIG_FILE', 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    mode = data.get('generation', {}).get('mode', 'both')
+    print(mode)
+except Exception:
+    print('both')
+EOF
+    fi
 }
 
 log_success() {
@@ -311,6 +337,12 @@ main() {
     echo -e "==========================================${NC}"
     echo ""
 
+    # Если режим не передан, читаем из конфигурации
+    if [ -z "$MODE" ]; then
+        MODE=$(get_config_mode)
+        log_info "Режим не указан, используется из конфигурации: $MODE"
+    fi
+
     # Обработка параметров
     case "$MODE" in
         --v4|v4)
@@ -328,11 +360,13 @@ main() {
             log_info "  --v4   : Обновить ufw-docker-rules-v4.sh (IPv4)"
             log_info "  --v6   : Обновить ufw-docker-rules-v6.sh (IPv6)"
             log_info "  --both : Обновить оба скрипта"
+            log_info "  (без параметра): Использовать generation.mode из ip-config.yml"
             exit 1
             ;;
     esac
 
     log_info "Режим: $MODE"
+    log_info "Конфигурация: $CONFIG_FILE"
     log_info "Директория IP: $IP_DIR"
     log_info "Директория бэкапов: $BACKUP_DIR"
     echo ""

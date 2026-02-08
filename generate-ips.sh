@@ -135,6 +135,31 @@ get_config_value() {
     fi
 }
 
+get_config_scalar() {
+    local path=$1
+
+    if command -v yq &> /dev/null; then
+        yq eval ".${path}" "$CONFIG_FILE" 2>/dev/null || echo ""
+    else
+        python3 << EOF
+import yaml
+try:
+    with open('$CONFIG_FILE', 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+
+    # Разбираем путь (например, "generation.mode")
+    keys = '$path'.split('.')
+    result = data
+    for key in keys:
+        result = result.get(key, '')
+
+    print(result)
+except Exception:
+    print('')
+EOF
+    fi
+}
+
 # ============================================
 # ВАЛИДАЦИЯ КОНФИГУРАЦИИ
 # ============================================
@@ -395,12 +420,24 @@ generate_ip_list_version() {
     local ipv6=${3:-false}  # Третий параметр: генерировать IPv6 (по умолчанию false)
 
     local ip_ver="IPv4"
+    local subsection="ipv4"
     if [ "$ipv6" = true ]; then
         ip_ver="IPv6"
+        subsection="ipv6"
+
+        # Проверяем, включен ли IPv6 для этого списка
+        local ipv6_enabled=$(get_config_scalar "${config_section}.ipv6.enabled")
+        if [ "$ipv6_enabled" = "false" ]; then
+            log_warning "IPv6 отключен для ${config_section}, пропускаем генерацию"
+            # Создаем пустой файл
+            touch "${OUTPUT_DIR}/${list_name}.txt"
+            return 0
+        fi
     fi
 
     log_info "=========================================="
     log_info "Генерация списка: ${list_name} ($ip_ver)"
+    log_info "Секция: ${config_section}.${subsection}"
     log_info "=========================================="
 
     local temp_file="${OUTPUT_DIR}/${list_name}_temp.txt"
@@ -412,7 +449,7 @@ generate_ip_list_version() {
 
     # 1. Добавляем прямые IP адреса
     log_info "Обработка прямых IP адресов..."
-    local direct_ips=$(get_config_value "$config_section" "direct_ips")
+    local direct_ips=$(get_config_value "${config_section}.${subsection}" "direct_ips")
     if [ -n "$direct_ips" ]; then
         echo "$direct_ips" | while read -r ip; do
             [ -n "$ip" ] && echo "$ip" >> "$raw_file"
@@ -423,7 +460,7 @@ generate_ip_list_version() {
 
     # 2. Обработка ASN
     log_info "Обработка ASN..."
-    local asns=$(get_config_value "$config_section" "asn")
+    local asns=$(get_config_value "${config_section}.${subsection}" "asn")
     if [ -n "$asns" ]; then
         echo "$asns" | while read -r asn; do
             if [ -n "$asn" ]; then
@@ -439,7 +476,7 @@ generate_ip_list_version() {
 
     # 3. Обработка стран
     log_info "Обработка стран..."
-    local countries=$(get_config_value "$config_section" "countries")
+    local countries=$(get_config_value "${config_section}.${subsection}" "countries")
     if [ -n "$countries" ]; then
         echo "$countries" | while read -r country; do
             if [ -n "$country" ]; then
@@ -455,7 +492,7 @@ generate_ip_list_version() {
 
     # 4. Обработка городов
     log_info "Обработка городов..."
-    local cities=$(get_config_value "$config_section" "cities")
+    local cities=$(get_config_value "${config_section}.${subsection}" "cities")
     if [ -n "$cities" ]; then
         echo "$cities" | while read -r city; do
             if [ -n "$city" ]; then
@@ -496,12 +533,22 @@ generate_ip_list_version() {
 generate_ip_list() {
     local list_name=$1
     local config_section=$2
+    local mode=$3
+    local ipv6_globally_enabled=$4
 
-    # Генерируем IPv4 версию
-    generate_ip_list_version "$list_name" "$config_section" false
+    # Генерируем IPv4 версию если mode = "v4" или "both"
+    if [ "$mode" = "v4" ] || [ "$mode" = "both" ]; then
+        generate_ip_list_version "$list_name" "$config_section" false
+    fi
 
-    # Генерируем IPv6 версию
-    generate_ip_list_version "${list_name}_ipv6" "$config_section" true
+    # Генерируем IPv6 версию если mode = "v6" или "both" И IPv6 глобально включен
+    if [ "$ipv6_globally_enabled" = "true" ]; then
+        if [ "$mode" = "v6" ] || [ "$mode" = "both" ]; then
+            generate_ip_list_version "${list_name}_ipv6" "$config_section" true
+        fi
+    else
+        log_warning "IPv6 глобально отключен (generation.ipv6_enabled = false), пропускаем IPv6 генерацию"
+    fi
 }
 
 # ============================================
@@ -537,10 +584,33 @@ main() {
     log_success "✓ MAXMIND_LICENSE_KEY установлен"
     echo ""
 
-    # Генерация списков IP
-    generate_ip_list "ssh_allowed_ips" "ssh_allowed_ips"
-    generate_ip_list "docker_allowed_ips" "docker_allowed_ips"
-    generate_ip_list "rustdesk_allowed_ips" "rustdesk_allowed_ips"
+    # Чтение настроек генерации из конфигурации
+    local generation_mode=$(get_config_scalar "generation.mode")
+    local ipv6_enabled=$(get_config_scalar "generation.ipv6_enabled")
+
+    # Значения по умолчанию
+    generation_mode="${generation_mode:-both}"
+    ipv6_enabled="${ipv6_enabled:-true}"
+
+    log_info "=========================================="
+    log_info "НАСТРОЙКИ ГЕНЕРАЦИИ"
+    log_info "=========================================="
+    log_info "Режим: $generation_mode"
+    log_info "IPv6 глобально: $ipv6_enabled"
+    log_info "=========================================="
+    echo ""
+
+    # Валидация режима
+    if [ "$generation_mode" != "v4" ] && [ "$generation_mode" != "v6" ] && [ "$generation_mode" != "both" ]; then
+        log_error "Неверный generation.mode: $generation_mode"
+        log_error "Допустимые значения: v4, v6, both"
+        exit 1
+    fi
+
+    # Генерация списков IP с учетом настроек
+    generate_ip_list "ssh_allowed_ips" "ssh_allowed_ips" "$generation_mode" "$ipv6_enabled"
+    generate_ip_list "docker_allowed_ips" "docker_allowed_ips" "$generation_mode" "$ipv6_enabled"
+    generate_ip_list "rustdesk_allowed_ips" "rustdesk_allowed_ips" "$generation_mode" "$ipv6_enabled"
 
     # Итоговая статистика
     echo -e "${GREEN}=========================================="
