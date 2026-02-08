@@ -69,29 +69,29 @@ jobs:
         env:
           MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
         run: |
-          echo "Запуск генерации IP списков..."
+          echo "Запуск генерации IP списков (IPv4 + IPv6)..."
           chmod +x generate-ips.sh
           ./generate-ips.sh
 
-      - name: Update UFW script
+      - name: Update UFW scripts
         run: |
-          echo "Обновление UFW скрипта..."
+          echo "Обновление UFW скриптов (v4 + v6)..."
           chmod +x update-ufw-script.sh
-          ./update-ufw-script.sh
+          ./update-ufw-script.sh --both
 
       - name: Check for changes
         id: check_changes
         run: |
-          # Проверяем изменения в UFW скрипте, IP списках и MaxMind базах
-          git add -N maxmind-data/ generated-ips/ ufw-docker-rules-v4.sh
+          # Проверяем изменения в UFW скриптах (v4 и v6), IP списках и MaxMind базах
+          git add -N maxmind-data/ generated-ips/ ufw-docker-rules-v4.sh ufw-docker-rules-v6.sh
 
-          if git diff --quiet HEAD -- ufw-docker-rules-v4.sh generated-ips/ maxmind-data/; then
+          if git diff --quiet HEAD -- ufw-docker-rules-v4.sh ufw-docker-rules-v6.sh generated-ips/ maxmind-data/; then
             echo "changes=false" >> $GITHUB_OUTPUT
             echo "Нет изменений"
           else
             echo "changes=true" >> $GITHUB_OUTPUT
             echo "Обнаружены изменения:"
-            git diff --stat HEAD -- ufw-docker-rules-v4.sh generated-ips/ maxmind-data/
+            git diff --stat HEAD -- ufw-docker-rules-v4.sh ufw-docker-rules-v6.sh generated-ips/ maxmind-data/
           fi
 
       - name: Generate statistics
@@ -100,6 +100,7 @@ jobs:
           echo "## 📊 Статистика IP адресов" > stats.md
           echo "" >> stats.md
 
+          echo "### IPv4 списки:" >> stats.md
           for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
             if [ -f "generated-ips/${list}.txt" ]; then
               count=$(wc -l < "generated-ips/${list}.txt")
@@ -108,9 +109,25 @@ jobs:
           done
 
           echo "" >> stats.md
-          echo "### 🔄 Изменения в скрипте" >> stats.md
+          echo "### IPv6 списки:" >> stats.md
+          for list in ssh_allowed_ips_ipv6 docker_allowed_ips_ipv6 rustdesk_allowed_ips_ipv6; do
+            if [ -f "generated-ips/${list}.txt" ]; then
+              count=$(wc -l < "generated-ips/${list}.txt")
+              echo "- **${list}**: ${count} IP блоков" >> stats.md
+            fi
+          done
+
+          echo "" >> stats.md
+          echo "### 🔄 Изменения в скриптах" >> stats.md
+          echo "#### ufw-docker-rules-v4.sh:" >> stats.md
           echo '```diff' >> stats.md
-          git diff ufw-docker-rules-v4.sh | head -100 >> stats.md
+          git diff ufw-docker-rules-v4.sh | head -50 >> stats.md
+          echo '```' >> stats.md
+
+          echo "" >> stats.md
+          echo "#### ufw-docker-rules-v6.sh:" >> stats.md
+          echo '```diff' >> stats.md
+          git diff ufw-docker-rules-v6.sh | head -50 >> stats.md
           echo '```' >> stats.md
 
           cat stats.md
@@ -123,6 +140,7 @@ jobs:
 
           # Добавляем изменения
           git add ufw-docker-rules-v4.sh
+          git add ufw-docker-rules-v6.sh
           git add generated-ips/*.txt
           git add maxmind-data/
 
@@ -134,8 +152,8 @@ jobs:
           cat << EOF > commit-msg.txt
           chore: автоматическое обновление IP списков
 
-          Обновлены IP адреса из настроенных источников:
-          $(cat stats.md | grep -A 10 "Статистика IP")
+          Обновлены IPv4 и IPv6 адреса из настроенных источников:
+          $(cat stats.md | grep -A 20 "Статистика IP")
 
           Дата: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           Workflow: ${{ github.workflow }}
@@ -217,7 +235,10 @@ jobs:
           files = [
               'generated-ips/ssh_allowed_ips.txt',
               'generated-ips/docker_allowed_ips.txt',
-              'generated-ips/rustdesk_allowed_ips.txt'
+              'generated-ips/rustdesk_allowed_ips.txt',
+              'generated-ips/ssh_allowed_ips_ipv6.txt',
+              'generated-ips/docker_allowed_ips_ipv6.txt',
+              'generated-ips/rustdesk_allowed_ips_ipv6.txt'
           ]
 
           all_valid = True
