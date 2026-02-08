@@ -1,8 +1,14 @@
 #!/bin/bash
 # ============================================
-# UFW Script Updater v1.0
+# UFW Script Updater v2.0
 # ============================================
-# Обновляет ufw-docker-rules-v4.sh с IP адресами из generated-ips/
+# Обновляет ufw-docker-rules-v4.sh и/или ufw-docker-rules-v6.sh
+# с IP адресами из generated-ips/
+#
+# Использование:
+#   ./update-ufw-script.sh --v4    # Обновить только IPv4 скрипт
+#   ./update-ufw-script.sh --v6    # Обновить только IPv6 скрипт
+#   ./update-ufw-script.sh --both  # Обновить оба скрипта
 # ============================================
 
 set -e
@@ -17,9 +23,13 @@ NC='\033[0m'
 
 # Глобальные переменные
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UFW_SCRIPT="${UFW_SCRIPT:-${SCRIPT_DIR}/ufw-docker-rules-v4.sh}"
 IP_DIR="${IP_DIR:-${SCRIPT_DIR}/generated-ips}"
 BACKUP_DIR="${BACKUP_DIR:-${SCRIPT_DIR}/backups}"
+CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/ip-config.yml}"
+
+# Режим работы (v4, v6, или both)
+# Если не передан параметр, читаем из конфигурации
+MODE="${1:-}"
 
 # ============================================
 # ФУНКЦИИ ЛОГИРОВАНИЯ
@@ -27,6 +37,30 @@ BACKUP_DIR="${BACKUP_DIR:-${SCRIPT_DIR}/backups}"
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
+}
+
+get_config_mode() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "both"  # По умолчанию
+        return
+    fi
+
+    # Пытаемся прочитать generation.mode из конфигурации
+    if command -v yq &> /dev/null; then
+        local mode=$(yq eval ".generation.mode" "$CONFIG_FILE" 2>/dev/null || echo "both")
+        echo "$mode"
+    else
+        python3 << EOF
+import yaml
+try:
+    with open('$CONFIG_FILE', 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    mode = data.get('generation', {}).get('mode', 'both')
+    print(mode)
+except Exception:
+    print('both')
+EOF
+    fi
 }
 
 log_success() {
@@ -239,20 +273,103 @@ show_statistics() {
 }
 
 # ============================================
+# ОБНОВЛЕНИЕ ОДНОГО UFW СКРИПТА
+# ============================================
+
+update_ufw_script() {
+    local ufw_script=$1
+    local ip_suffix=$2
+    local version_name=$3
+
+    log_info "=========================================="
+    log_info "Обновление: $version_name"
+    log_info "=========================================="
+
+    # Проверка существования UFW скрипта
+    if [ ! -f "$ufw_script" ]; then
+        log_error "UFW скрипт не найден: $ufw_script"
+        return 1
+    fi
+
+    log_info "UFW скрипт: $ufw_script"
+    log_info "IP суффикс: $ip_suffix"
+    echo ""
+
+    # Создаем резервную копию
+    create_backup "$ufw_script"
+    echo ""
+
+    # Обновляем каждую секцию
+    update_section "$ufw_script" "SSH_ALLOWED_IPS" "${IP_DIR}/ssh_allowed_ips${ip_suffix}.txt"
+    update_section "$ufw_script" "DOCKER_ALLOWED_IPS" "${IP_DIR}/docker_allowed_ips${ip_suffix}.txt"
+    update_section "$ufw_script" "RUSTDESK_ALLOWED_IPS" "${IP_DIR}/rustdesk_allowed_ips${ip_suffix}.txt"
+    echo ""
+
+    # Проверка синтаксиса
+    if ! check_bash_syntax "$ufw_script"; then
+        log_error "Обнаружена ошибка синтаксиса!"
+        log_info "Восстановление из резервной копии..."
+
+        local latest_backup=$(ls -t "${BACKUP_DIR}/"*.backup 2>/dev/null | head -1)
+        if [ -n "$latest_backup" ]; then
+            cp "$latest_backup" "$ufw_script"
+            log_success "Восстановлено из: $latest_backup"
+        fi
+        return 1
+    fi
+    echo ""
+
+    # Отображение статистики
+    show_statistics "$ufw_script"
+    echo ""
+
+    log_success "Скрипт $ufw_script обновлен!"
+    echo ""
+}
+
+# ============================================
 # ГЛАВНАЯ ФУНКЦИЯ
 # ============================================
 
 main() {
     echo -e "${GREEN}=========================================="
-    echo -e "  UFW Script Updater v1.0"
+    echo -e "  UFW Script Updater v2.0"
     echo -e "==========================================${NC}"
     echo ""
 
-    # Проверка существования UFW скрипта
-    if [ ! -f "$UFW_SCRIPT" ]; then
-        log_error "UFW скрипт не найден: $UFW_SCRIPT"
-        exit 1
+    # Если режим не передан, читаем из конфигурации
+    if [ -z "$MODE" ]; then
+        MODE=$(get_config_mode)
+        log_info "Режим не указан, используется из конфигурации: $MODE"
     fi
+
+    # Обработка параметров
+    case "$MODE" in
+        --v4|v4)
+            MODE="v4"
+            ;;
+        --v6|v6)
+            MODE="v6"
+            ;;
+        --both|both)
+            MODE="both"
+            ;;
+        *)
+            log_error "Неизвестный режим: $MODE"
+            log_info "Использование: $0 [--v4|--v6|--both]"
+            log_info "  --v4   : Обновить ufw-docker-rules-v4.sh (IPv4)"
+            log_info "  --v6   : Обновить ufw-docker-rules-v6.sh (IPv6)"
+            log_info "  --both : Обновить оба скрипта"
+            log_info "  (без параметра): Использовать generation.mode из ip-config.yml"
+            exit 1
+            ;;
+    esac
+
+    log_info "Режим: $MODE"
+    log_info "Конфигурация: $CONFIG_FILE"
+    log_info "Директория IP: $IP_DIR"
+    log_info "Директория бэкапов: $BACKUP_DIR"
+    echo ""
 
     # Проверка директории с IP
     if [ ! -d "$IP_DIR" ]; then
@@ -261,46 +378,34 @@ main() {
         exit 1
     fi
 
-    log_info "UFW скрипт: $UFW_SCRIPT"
-    log_info "Директория IP: $IP_DIR"
-    log_info "Директория бэкапов: $BACKUP_DIR"
-    echo ""
+    # Обновление скриптов в зависимости от режима
+    local update_failed=false
 
-    # Создаем резервную копию
-    create_backup "$UFW_SCRIPT"
-    echo ""
-
-    # Обновляем каждую секцию
-    update_section "$UFW_SCRIPT" "SSH_ALLOWED_IPS" "${IP_DIR}/ssh_allowed_ips.txt"
-    update_section "$UFW_SCRIPT" "DOCKER_ALLOWED_IPS" "${IP_DIR}/docker_allowed_ips.txt"
-    update_section "$UFW_SCRIPT" "RUSTDESK_ALLOWED_IPS" "${IP_DIR}/rustdesk_allowed_ips.txt"
-    echo ""
-
-    # Проверка синтаксиса
-    if ! check_bash_syntax "$UFW_SCRIPT"; then
-        log_error "Обнаружена ошибка синтаксиса!"
-        log_info "Восстановление из резервной копии..."
-
-        local latest_backup=$(ls -t "${BACKUP_DIR}/"*.backup 2>/dev/null | head -1)
-        if [ -n "$latest_backup" ]; then
-            cp "$latest_backup" "$UFW_SCRIPT"
-            log_success "Восстановлено из: $latest_backup"
+    if [ "$MODE" = "v4" ] || [ "$MODE" = "both" ]; then
+        if ! update_ufw_script "${SCRIPT_DIR}/ufw-docker-rules-v4.sh" "" "ufw-docker-rules-v4.sh (IPv4)"; then
+            update_failed=true
         fi
+    fi
+
+    if [ "$MODE" = "v6" ] || [ "$MODE" = "both" ]; then
+        if ! update_ufw_script "${SCRIPT_DIR}/ufw-docker-rules-v6.sh" "_ipv6" "ufw-docker-rules-v6.sh (IPv6)"; then
+            update_failed=true
+        fi
+    fi
+
+    if [ "$update_failed" = true ]; then
+        echo -e "${RED}=========================================="
+        echo -e "  ОБНОВЛЕНИЕ ЗАВЕРШЕНО С ОШИБКАМИ"
+        echo -e "==========================================${NC}"
         exit 1
     fi
-    echo ""
-
-    # Отображение статистики
-    show_statistics "$UFW_SCRIPT"
-    echo ""
 
     echo -e "${GREEN}=========================================="
     echo -e "  ОБНОВЛЕНИЕ ЗАВЕРШЕНО УСПЕШНО"
     echo -e "==========================================${NC}"
     echo ""
 
-    log_success "Скрипт $UFW_SCRIPT обновлен!"
-    log_info "Резервная копия сохранена в $BACKUP_DIR"
+    log_info "Резервные копии сохранены в $BACKUP_DIR"
     log_info "Теперь вы можете запустить обновленный скрипт"
     echo ""
 }

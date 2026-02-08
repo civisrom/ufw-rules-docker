@@ -39,11 +39,12 @@ def log_error(message):
     print(f"{Colors.RED}[ERROR]{Colors.NC} {message}", file=sys.stderr)
 
 class MaxMindExtractor:
-    def __init__(self, cache_dir: str):
+    def __init__(self, cache_dir: str, ipv6: bool = False):
         self.cache_dir = Path(cache_dir).resolve()
         # Используем maxmind-data для хранения CSV баз
         self.csv_dir = self.cache_dir
         self.metadata_dir = self.cache_dir / ".metadata"
+        self.ipv6 = ipv6  # IPv6 режим
         self.csv_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
 
@@ -175,19 +176,21 @@ class MaxMindExtractor:
 
     def get_ips_by_country(self, country_code: str) -> Set[str]:
         """Получает IP блоки по коду страны"""
-        log_info(f"Извлечение IP для страны: {country_code}")
+        ip_version = "IPv6" if self.ipv6 else "IPv4"
+        log_info(f"Извлечение {ip_version} для страны: {country_code}")
 
         ips = set()
 
         # Ищем CSV файлы GeoLite2-Country
         country_csv = None
         blocks_csv = None
+        blocks_file_pattern = "Country-Blocks-IPv6.csv" if self.ipv6 else "Country-Blocks-IPv4.csv"
 
         for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-Country-CSV"):
             for file in files:
                 if file.endswith("Country-Locations-en.csv"):
                     country_csv = Path(root) / file
-                elif file.endswith("Country-Blocks-IPv4.csv"):
+                elif file.endswith(blocks_file_pattern):
                     blocks_csv = Path(root) / file
 
         if not country_csv or not blocks_csv:
@@ -237,16 +240,18 @@ class MaxMindExtractor:
         # Удаляем префикс AS если есть
         asn_number = asn.replace('AS', '').replace('as', '')
 
-        log_info(f"Извлечение IP для ASN: AS{asn_number}")
+        ip_version = "IPv6" if self.ipv6 else "IPv4"
+        log_info(f"Извлечение {ip_version} для ASN: AS{asn_number}")
 
         ips = set()
 
         # Ищем CSV файлы GeoLite2-ASN
         blocks_csv = None
+        blocks_file_pattern = "ASN-Blocks-IPv6.csv" if self.ipv6 else "ASN-Blocks-IPv4.csv"
 
         for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-ASN-CSV"):
             for file in files:
-                if file.endswith("ASN-Blocks-IPv4.csv"):
+                if file.endswith(blocks_file_pattern):
                     blocks_csv = Path(root) / file
 
         if not blocks_csv:
@@ -273,7 +278,8 @@ class MaxMindExtractor:
 
     def get_ips_by_city(self, city_spec: str) -> Set[str]:
         """Получает IP блоки по городу"""
-        log_info(f"Извлечение IP для города: {city_spec}")
+        ip_version = "IPv6" if self.ipv6 else "IPv4"
+        log_info(f"Извлечение {ip_version} для города: {city_spec}")
 
         # Парсим спецификацию города: "Страна/Город" или "Страна/Регион/Город"
         parts = city_spec.split('/')
@@ -289,12 +295,13 @@ class MaxMindExtractor:
         # Ищем CSV файлы GeoLite2-City
         city_csv = None
         blocks_csv = None
+        blocks_file_pattern = "City-Blocks-IPv6.csv" if self.ipv6 else "City-Blocks-IPv4.csv"
 
         for root, dirs, files in os.walk(self.csv_dir / "GeoLite2-City-CSV"):
             for file in files:
                 if file.endswith("City-Locations-en.csv"):
                     city_csv = Path(root) / file
-                elif file.endswith("City-Blocks-IPv4.csv"):
+                elif file.endswith(blocks_file_pattern):
                     blocks_csv = Path(root) / file
 
         if not city_csv or not blocks_csv:
@@ -385,6 +392,8 @@ def main():
                        help='Выходной файл')
     parser.add_argument('--optimize', action='store_true',
                        help='Оптимизировать CIDR блоки')
+    parser.add_argument('--ipv6', action='store_true',
+                       help='Извлекать IPv6 адреса (по умолчанию: IPv4)')
 
     args = parser.parse_args()
 
@@ -392,11 +401,12 @@ def main():
         log_error("Укажите хотя бы один источник: --country, --asn или --city")
         sys.exit(1)
 
+    ip_version = "IPv6" if args.ipv6 else "IPv4"
     print(f"{Colors.GREEN}========================================")
-    print(f"  MaxMind GeoLite2 IP Extractor v1.0")
+    print(f"  MaxMind GeoLite2 IP Extractor v1.0 ({ip_version})")
     print(f"========================================{Colors.NC}\n")
 
-    extractor = MaxMindExtractor(args.cache_dir)
+    extractor = MaxMindExtractor(args.cache_dir, ipv6=args.ipv6)
     all_ips = set()
 
     # Скачиваем необходимые базы
