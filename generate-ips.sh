@@ -328,7 +328,6 @@ get_ips_from_city() {
             log_success "✓ Получено $count $ip_ver блоков для города ${city_spec} из MaxMind"
         else
             log_warning "Не найдено $ip_ver блоков для города ${city_spec}"
-            return 1
         fi
     else
         log_error "Не удалось получить IP для города ${city_spec}"
@@ -467,8 +466,11 @@ generate_ip_list_version() {
                 # Используем временный файл для каждого ASN, затем добавляем в raw_file
                 local asn_temp="${OUTPUT_DIR}/${list_name}_asn_${asn}_temp.txt"
                 if get_ips_from_asn "$asn" "$asn_temp" "$ipv6"; then
-                    cat "$asn_temp" >> "$raw_file"
-                    rm -f "$asn_temp"
+                    # Проверяем что файл существует перед добавлением
+                    if [ -f "$asn_temp" ]; then
+                        cat "$asn_temp" >> "$raw_file"
+                        rm -f "$asn_temp"
+                    fi
                 fi
             fi
         done
@@ -483,8 +485,11 @@ generate_ip_list_version() {
                 # Используем временный файл для каждой страны, затем добавляем в raw_file
                 local country_temp="${OUTPUT_DIR}/${list_name}_country_${country}_temp.txt"
                 if get_ips_from_country "$country" "$country_temp" "$ipv6"; then
-                    cat "$country_temp" >> "$raw_file"
-                    rm -f "$country_temp"
+                    # Проверяем что файл существует перед добавлением
+                    if [ -f "$country_temp" ]; then
+                        cat "$country_temp" >> "$raw_file"
+                        rm -f "$country_temp"
+                    fi
                 fi
             fi
         done
@@ -500,8 +505,11 @@ generate_ip_list_version() {
                 local city_safe=$(echo "$city" | tr '/' '_')
                 local city_temp="${OUTPUT_DIR}/${list_name}_city_${city_safe}_temp.txt"
                 if get_ips_from_city "$city" "$city_temp" "$ipv6"; then
-                    cat "$city_temp" >> "$raw_file"
-                    rm -f "$city_temp"
+                    # Проверяем что файл существует перед добавлением
+                    if [ -f "$city_temp" ]; then
+                        cat "$city_temp" >> "$raw_file"
+                        rm -f "$city_temp"
+                    fi
                 fi
             fi
         done
