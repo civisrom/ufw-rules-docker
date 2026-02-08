@@ -443,17 +443,17 @@ def main():
             ips = extractor.get_ips_by_city(city)
             all_ips.update(ips)
 
-    if not all_ips:
-        log_warning("Не найдено IP адресов")
-        sys.exit(0)
-
     # Оптимизация
-    if args.optimize:
-        final_ips = optimize_cidrs(all_ips)
+    if all_ips:
+        if args.optimize:
+            final_ips = optimize_cidrs(all_ips)
+        else:
+            final_ips = sorted(all_ips)
     else:
-        final_ips = sorted(all_ips)
+        log_warning("Не найдено IP адресов")
+        final_ips = []
 
-    # Сохраняем результат
+    # Сохраняем результат (даже если пустой)
     try:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -462,7 +462,10 @@ def main():
             for ip in final_ips:
                 f.write(f"{ip}\n")
 
-        log_success(f"✓ Сохранено {len(final_ips)} IP блоков в {args.output}")
+        if final_ips:
+            log_success(f"✓ Сохранено {len(final_ips)} IP блоков в {args.output}")
+        else:
+            log_success(f"✓ Создан пустой файл {args.output} (0 IP блоков)")
 
     except Exception as e:
         log_error(f"Ошибка сохранения: {e}")
