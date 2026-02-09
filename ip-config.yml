@@ -1,8 +1,7 @@
 # =============================================
 # IP Configuration for UFW Docker Rules
 # ==============================================
-# Этот файл определяет источники IP адресов для различных списков доступа
-# GitHub Actions автоматически обработает этот файл и обновит UFW скрипты
+# Этот файл определяет источники IP адресов для UFW скриптов
 #
 # ⚠️ ВАЖНО: Все IP адреса извлекаются из MaxMind GeoLite2 баз данных
 # Требуется бесплатный License Key от MaxMind: https://www.maxmind.com/en/geolite2/signup
@@ -13,165 +12,204 @@
 # - GeoLite2-City: IP адреса по городам
 # - GeoLite2-ASN: IP адреса по ASN (провайдеры, облака)
 #
-# НОВАЯ СТРУКТУРА v3.0:
-# - Раздельные настройки для IPv4 и IPv6
-# - Возможность отключить IPv6 для конкретного списка
-# - Разные источники для v4 и v6
+# СТРУКТУРА v3.1:
+# - Два независимых скрипта: ufw_v4_script и ufw_v6_script
+# - Каждый скрипт содержит и IPv4 и IPv6 адреса
+# - Возможность указать разные ASN/страны/города для каждого скрипта
 # ============================================
 
-version: "3.0"
+version: "3.1"
 
 # ============================================
 # НАСТРОЙКИ ГЕНЕРАЦИИ
 # ============================================
 generation:
-  # Режим работы: какие скрипты обновлять
+  # Какие скрипты обновлять:
   # v4 - только ufw-docker-rules-v4.sh
   # v6 - только ufw-docker-rules-v6.sh
   # both - оба скрипта (рекомендуется)
-  mode: "both"
+  update_scripts: "both"
 
   # Глобальное включение/отключение IPv6
   # Если false, все ipv6 секции будут игнорироваться
   ipv6_enabled: true
 
 # ============================================
-# SSH_ALLOWED_IPS - Белый список для SSH доступа
+# UFW-DOCKER-RULES-V4.SH
+# Настройки для первого скрипта
 # ============================================
-ssh_allowed_ips:
-  # ========== IPv4 конфигурация ==========
-  ipv4:
-    # Прямые IPv4 адреса в формате CIDR
-    direct_ips:
-      #- "192.168.1.0/24"
-      #- "10.0.0.0/8"
+ufw_v4_script:
+  # SSH_ALLOWED_IPS для v4 скрипта
+  ssh_allowed_ips:
+    # ========== IPv4 адреса ==========
+    ipv4:
+      direct_ips:
+        #- "192.168.1.0/24"
+      asn:
+        - "AS48004"
+        #- "AS13335"  # Cloudflare
+      countries:
+        # - "RU"
+      cities:
+        # - "RU/Moscow"
 
-    # ASN (Autonomous System Numbers)
-    # Получает все IPv4 адреса, принадлежащие указанным ASN
-    asn:
-      - "AS48004"
-      #- "AS13335"  # Cloudflare
-      #- "AS15169"  # Google
+    # ========== IPv6 адреса ==========
+    ipv6:
+      enabled: true  # Включить IPv6 для этого списка
+      direct_ips:
+        #- "2001:db8::/32"
+      asn:
+        - "AS48004"
+      countries:
+        # - "RU"
+      cities:
+        # - "RU/Moscow"
 
-    # Страны (ISO 3166-1 alpha-2 коды)
-    # ВНИМАНИЕ: Это может добавить МНОГО IP адресов!
-    countries:
-      # - "US"  # США
-      # - "GB"  # Великобритания
-      # - "RU"  # Россия
+  # DOCKER_ALLOWED_IPS для v4 скрипта
+  docker_allowed_ips:
+    ipv4:
+      direct_ips:
+        #- "192.168.1.0/24"
+      asn:
+        - "AS48004"
+        - "AS201776"
+        - "AS48000"
+        - "AS8359"
+        - "AS29194"
+        - "AS203451"
+        - "AS203561"
+      countries:
+        # - "US"
+      cities:
+        # - "US/Virginia/Ashburn"
 
-    # Города (требуется GeoLite2-City база)
-    # Формат: "Страна/Город" или "Страна/Регион/Город"
-    cities:
-      # - "RU/Moscow"
-      # - "US/California/San Francisco"
+    ipv6:
+      enabled: true
+      direct_ips:
+        #- "2001:db8::/32"
+      asn:
+        - "AS48004"
+        - "AS201776"
+        - "AS48000"
+        - "AS8359"
+        - "AS29194"
+        - "AS203451"
+        - "AS203561"
+      countries:
+        # - "US"
+      cities:
+        # - "US/Virginia/Ashburn"
 
-  # ========== IPv6 конфигурация ==========
-  ipv6:
-    # Включить генерацию IPv6 для этого списка
-    # Если false, все настройки ниже будут проигнорированы
-    enabled: true
+  # RUSTDESK_ALLOWED_IPS для v4 скрипта
+  rustdesk_allowed_ips:
+    ipv4:
+      direct_ips:
+        #- "192.168.1.0/24"
+      asn:
+        #- "AS13335"
+      countries:
+        # - "RU"
+      cities:
+        # - "RU/Moscow"
 
-    # Прямые IPv6 адреса в формате CIDR
-    direct_ips:
-      #- "2001:db8::/32"
-      #- "fd00::/8"
-
-    # ASN для IPv6 (можно указать те же или другие, отличные от IPv4)
-    asn:
-      - "AS48004"
-      #- "AS13335"  # Cloudflare
-
-    # Страны для IPv6
-    countries:
-      # - "US"
-      # - "RU"
-
-    # Города для IPv6
-    cities:
-      # - "RU/Moscow"
-
-# ============================================
-# DOCKER_ALLOWED_IPS - Белый список для Docker контейнеров
-# ============================================
-docker_allowed_ips:
-  # ========== IPv4 конфигурация ==========
-  ipv4:
-    direct_ips:
-      #- "192.168.1.0/24"
-
-    asn:
-      - "AS48004"
-      - "AS201776"
-      - "AS48000"
-      - "AS8359"
-      - "AS29194"
-      - "AS203451"
-      - "AS203561"
-
-    countries:
-      # - "US"
-
-    cities:
-      # - "US/Virginia/Ashburn"  # AWS us-east-1
-
-  # ========== IPv6 конфигурация ==========
-  ipv6:
-    enabled: true
-
-    direct_ips:
-      #- "2001:db8::/32"
-
-    asn:
-      - "AS48004"
-      - "AS201776"
-      - "AS48000"
-      - "AS8359"
-      - "AS29194"
-      - "AS203451"
-      - "AS203561"
-
-    countries:
-      # - "US"
-
-    cities:
-      # - "US/Virginia/Ashburn"
+    ipv6:
+      enabled: false  # Отключить IPv6 для RustDesk в v4 скрипте
+      direct_ips:
+        #- "2001:db8::/32"
+      asn:
+        #- "AS13335"
+      countries:
+        # - "RU"
+      cities:
+        # - "RU/Moscow"
 
 # ============================================
-# RUSTDESK_ALLOWED_IPS - Белый список для RustDesk
+# UFW-DOCKER-RULES-V6.SH
+# Настройки для второго скрипта
 # ============================================
-rustdesk_allowed_ips:
-  # ========== IPv4 конфигурация ==========
-  ipv4:
-    direct_ips:
-      #- "192.168.1.0/24"
+ufw_v6_script:
+  # SSH_ALLOWED_IPS для v6 скрипта
+  ssh_allowed_ips:
+    ipv4:
+      direct_ips:
+        #- "192.168.1.0/24"
+      asn:
+        - "AS48004"
+        #- "AS15169"  # Google (РАЗНЫЕ ASN для v6 скрипта!)
+      countries:
+        # - "US"  # Разные страны!
+      cities:
+        # - "US/California/San Francisco"
 
-    asn:
-      #- "AS13335"  # Cloudflare
+    ipv6:
+      enabled: true
+      direct_ips:
+        #- "2001:db8::/32"
+      asn:
+        - "AS48004"
+        #- "AS15169"  # Google
+      countries:
+        # - "US"
+      cities:
+        # - "US/California/San Francisco"
 
-    countries:
-      # - "RU"
-      # - "US"
+  # DOCKER_ALLOWED_IPS для v6 скрипта
+  docker_allowed_ips:
+    ipv4:
+      direct_ips:
+        #- "192.168.1.0/24"
+      asn:
+        - "AS48004"
+        - "AS201776"
+        - "AS48000"
+        - "AS8359"
+        - "AS29194"
+        - "AS203451"
+        - "AS203561"
+      countries:
+        # - "US"
+      cities:
+        # - "US/Virginia/Ashburn"
 
-    cities:
-      # - "RU/Moscow"
+    ipv6:
+      enabled: true
+      direct_ips:
+        #- "2001:db8::/32"
+      asn:
+        - "AS48004"
+        - "AS201776"
+        - "AS48000"
+        - "AS8359"
+        - "AS29194"
+        - "AS203451"
+        - "AS203561"
+      countries:
+        # - "US"
+      cities:
+        # - "US/Virginia/Ashburn"
 
-  # ========== IPv6 конфигурация ==========
-  ipv6:
-    # Пример: отключение IPv6 для RustDesk
-    enabled: false
+  # RUSTDESK_ALLOWED_IPS для v6 скрипта
+  rustdesk_allowed_ips:
+    ipv4:
+      direct_ips:
+        #- "192.168.1.0/24"
+      asn:
+        #- "AS13335"
+      countries:
+        # - "RU"
+      cities:
+        # - "RU/Moscow"
 
-    direct_ips:
-      #- "2001:db8::/32"
-
-    asn:
-      #- "AS13335"
-
-    countries:
-      # - "RU"
-
-    cities:
-      # - "RU/Moscow"
+    ipv6:
+      enabled: false  # Отключить IPv6 для RustDesk в v6 скрипте
+      direct_ips:
+        #- "2001:db8::/32"
+      asn:
+        #- "AS13335"
+      countries:
+        # - "RU"
+      cities:
+        # - "RU/Moscow"
 
 # ============================================
 # НАСТРОЙКИ ГЕНЕРАЦИИ
@@ -218,60 +256,62 @@ settings:
 # ПРИМЕРЫ КОНФИГУРАЦИЙ
 # ============================================
 
-# Пример 1: Разрешить SSH только с определенных IPv4 адресов, без IPv6
-# ssh_allowed_ips:
-#   ipv4:
-#     direct_ips:
-#       - "192.168.1.0/24"
-#       - "10.0.0.0/8"
-#   ipv6:
-#     enabled: false
-
-# Пример 2: Dual-stack для Docker (одинаковые ASN для IPv4 и IPv6)
-# docker_allowed_ips:
-#   ipv4:
-#     asn:
-#       - "AS16509"  # Amazon
-#   ipv6:
-#     enabled: true
-#     asn:
-#       - "AS16509"  # Amazon
-
-# Пример 3: Разные источники для IPv4 и IPv6
-# ssh_allowed_ips:
-#   ipv4:
-#     countries:
-#       - "RU"
-#   ipv6:
-#     enabled: true
-#     countries:
-#       - "US"  # Другая страна для IPv6
-
-# Пример 4: Комбинированная конфигурация
-# ssh_allowed_ips:
-#   ipv4:
-#     direct_ips:
-#       - "10.0.0.0/8"
-#     asn:
-#       - "AS13335"
-#     cities:
-#       - "RU/Moscow"
-#   ipv6:
-#     enabled: true
-#     direct_ips:
-#       - "2001:db8::/32"
-#     asn:
-#       - "AS13335"
-#     cities:
-#       - "US/California/San Francisco"  # Другой город для IPv6
-
-# Пример 5: Только IPv4, полное отключение IPv6
-# generation:
-#   mode: "v4"
-#   ipv6_enabled: false
+# Пример 1: Разные ASN для разных скриптов
+# ufw_v4_script:
+#   ssh_allowed_ips:
+#     ipv4:
+#       asn: ["AS48004"]  # Российский провайдер для v4 скрипта
+#     ipv6:
+#       enabled: true
+#       asn: ["AS48004"]
 #
-# ssh_allowed_ips:
-#   ipv4:
-#     asn: ["AS48004"]
-#   ipv6:
-#     enabled: false
+# ufw_v6_script:
+#   ssh_allowed_ips:
+#     ipv4:
+#       asn: ["AS13335"]  # Cloudflare для v6 скрипта
+#     ipv6:
+#       enabled: true
+#       asn: ["AS13335"]
+
+# Пример 2: Разные страны для v4 и v6 скриптов
+# ufw_v4_script:
+#   docker_allowed_ips:
+#     ipv4:
+#       countries: ["RU"]
+#     ipv6:
+#       enabled: true
+#       countries: ["RU"]
+#
+# ufw_v6_script:
+#   docker_allowed_ips:
+#     ipv4:
+#       countries: ["US"]
+#     ipv6:
+#       enabled: true
+#       countries: ["US"]
+
+# Пример 3: Только IPv4 в одном скрипте, dual-stack в другом
+# ufw_v4_script:
+#   ssh_allowed_ips:
+#     ipv4:
+#       asn: ["AS48004"]
+#     ipv6:
+#       enabled: false  # Без IPv6 в v4 скрипте
+#
+# ufw_v6_script:
+#   ssh_allowed_ips:
+#     ipv4:
+#       asn: ["AS13335"]
+#     ipv6:
+#       enabled: true  # С IPv6 в v6 скрипте
+#       asn: ["AS13335"]
+
+# Пример 4: Обновление только одного скрипта
+# generation:
+#   update_scripts: "v4"  # Обновлять только ufw-docker-rules-v4.sh
+#   ipv6_enabled: true
+
+# Пример 5: Полное отключение IPv6 для всех скриптов
+# generation:
+#   update_scripts: "both"
+#   ipv6_enabled: false  # Глобально отключить IPv6

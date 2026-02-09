@@ -1,100 +1,97 @@
-# UFW Rules Docker - Документация по IPv6
+# UFW Rules Docker - Документация по работе с двумя скриптами
 
 ## Обзор
 
-Система UFW Rules Docker поддерживает **dual-stack** работу с IPv4 и IPv6 адресами с полным контролем над каждой версией протокола.
+Система UFW Rules Docker поддерживает работу с **двумя независимыми UFW скриптами**: `ufw-docker-rules-v4.sh` и `ufw-docker-rules-v6.sh`.
 
-### Основные возможности:
+### ⚠️ Важно понять:
 
-- **Раздельная конфигурация**: Можно указать разные ASN, страны и города для IPv4 и IPv6
-- **Индивидуальное управление**: Каждый список (SSH, Docker, RustDesk) может иметь свои настройки IPv6
-- **Гибкое отключение**: IPv6 можно отключить глобально или для конкретного списка
-- **Режимы работы**: Генерация только IPv4, только IPv6, или обоих одновременно
+- **v4 и v6 в названиях скриптов** - это просто названия, **НЕ** привязка к версии IP протокола
+- **Каждый скрипт содержит И IPv4 И IPv6 адреса**
+- Для каждого скрипта можно указать **свои собственные** ASN, страны и города
+- Это позволяет настроить разные правила для разных сценариев использования
 
-## Структура конфигурации (v3.0)
+## Структура конфигурации (v3.1)
 
 ### Глобальные настройки
 
 ```yaml
 generation:
-  # Режим работы: v4, v6, или both
-  mode: "both"
+  # Какие скрипты обновлять:
+  # v4 - только ufw-docker-rules-v4.sh
+  # v6 - только ufw-docker-rules-v6.sh
+  # both - оба скрипта (рекомендуется)
+  update_scripts: "both"
 
   # Глобальное включение/отключение IPv6
   ipv6_enabled: true
 ```
 
-### Настройки списков IP
-
-Каждый список имеет **отдельные** секции для IPv4 и IPv6:
+### Настройки для каждого скрипта
 
 ```yaml
-ssh_allowed_ips:
-  # ========== IPv4 конфигурация ==========
-  ipv4:
-    asn:
-      - "AS48004"
-    countries:
-      - "RU"
-    cities:
-      - "RU/Moscow"
-    direct_ips:
-      - "192.168.1.0/24"
+# Настройки для ufw-docker-rules-v4.sh (первый скрипт)
+ufw_v4_script:
+  ssh_allowed_ips:
+    ipv4:
+      asn: ["AS48004"]      # IPv4 адреса для v4 скрипта
+      countries: ["RU"]
+    ipv6:
+      enabled: true
+      asn: ["AS48004"]      # IPv6 адреса для v4 скрипта
+      countries: ["RU"]
 
-  # ========== IPv6 конфигурация ==========
-  ipv6:
-    enabled: true  # Можно отключить для конкретного списка
-    asn:
-      - "AS48004"  # Можно указать другие ASN, отличные от IPv4
-    countries:
-      - "US"  # Можно указать другие страны
-    cities:
-      - "US/California/San Francisco"  # Другие города
-    direct_ips:
-      - "2001:db8::/32"
+# Настройки для ufw-docker-rules-v6.sh (второй скрипт)
+ufw_v6_script:
+  ssh_allowed_ips:
+    ipv4:
+      asn: ["AS13335"]      # ДРУГИЕ IPv4 адреса для v6 скрипта!
+      countries: ["US"]     # ДРУГИЕ страны!
+    ipv6:
+      enabled: true
+      asn: ["AS13335"]      # ДРУГИЕ IPv6 адреса для v6 скрипта!
+      countries: ["US"]
 ```
 
-## Структура файлов с IP адресами
-
-Скрипт `generate-ips.sh` создает парные файлы для каждого списка:
+## Структура генерируемых файлов
 
 ```
 generated-ips/
-├── ssh_allowed_ips.txt         # IPv4 адреса для SSH
-├── ssh_allowed_ips_ipv6.txt    # IPv6 адреса для SSH
-├── docker_allowed_ips.txt      # IPv4 адреса для Docker
-├── docker_allowed_ips_ipv6.txt # IPv6 адреса для Docker
-├── rustdesk_allowed_ips.txt    # IPv4 адреса для RustDesk
-└── rustdesk_allowed_ips_ipv6.txt # IPv6 адреса для RustDesk
+# Файлы для ufw-docker-rules-v4.sh:
+├── v4_ssh_allowed_ips.txt         # IPv4 для v4 скрипта, SSH
+├── v4_ssh_allowed_ips_ipv6.txt    # IPv6 для v4 скрипта, SSH
+├── v4_docker_allowed_ips.txt      # IPv4 для v4 скрипта, Docker
+├── v4_docker_allowed_ips_ipv6.txt # IPv6 для v4 скрипта, Docker
+├── v4_rustdesk_allowed_ips.txt
+├── v4_rustdesk_allowed_ips_ipv6.txt
+
+# Файлы для ufw-docker-rules-v6.sh:
+├── v6_ssh_allowed_ips.txt         # IPv4 для v6 скрипта, SSH
+├── v6_ssh_allowed_ips_ipv6.txt    # IPv6 для v6 скрипта, SSH
+├── v6_docker_allowed_ips.txt      # IPv4 для v6 скрипта, Docker
+├── v6_docker_allowed_ips_ipv6.txt # IPv6 для v6 скрипта, Docker
+├── v6_rustdesk_allowed_ips.txt
+└── v6_rustdesk_allowed_ips_ipv6.txt
 ```
-
-**Примечание**: Если IPv6 отключен для списка, соответствующий `*_ipv6.txt` файл будет пустым.
-
-## UFW скрипты
-
-Система использует два скрипта для управления правилами:
-
-- **ufw-docker-rules-v4.sh** - использует IPv4 списки (`*_allowed_ips.txt`)
-- **ufw-docker-rules-v6.sh** - использует IPv6 списки (`*_allowed_ips_ipv6.txt`)
 
 ## Команды
 
 ### Генерация IP списков
 
 ```bash
-# Генерация списков в соответствии с generation.mode из конфигурации
+# Генерация списков согласно generation.update_scripts
 ./generate-ips.sh
 ```
 
 Скрипт автоматически:
-- Читает `generation.mode` из `ip-config.yml`
-- Генерирует только IPv4, только IPv6, или оба
-- Уважает `ipv6.enabled` для каждого списка
+- Читает `generation.update_scripts` из `ip-config.yml`
+- Генерирует файлы для соответствующих скриптов
+- Для каждого скрипта создает И IPv4 И IPv6 файлы
 
 ### Обновление UFW скриптов
 
 ```bash
-# Использовать generation.mode из конфигурации (рекомендуется)
+# Использовать generation.update_scripts из конфигурации (рекомендуется)
 ./update-ufw-script.sh
 
 # ИЛИ переопределить режим вручную:
@@ -109,179 +106,191 @@ generated-ips/
 ./update-ufw-script.sh --both
 ```
 
-### Полный цикл обновления
+## Примеры использования
 
-```bash
-# 1. Генерация всех списков согласно конфигурации
-./generate-ips.sh
+### Пример 1: Разные провайдеры для разных скриптов
 
-# 2. Обновление скриптов согласно конфигурации
-./update-ufw-script.sh
+```yaml
+# v4 скрипт использует российских провайдеров
+ufw_v4_script:
+  ssh_allowed_ips:
+    ipv4:
+      asn: ["AS48004", "AS8359"]  # Российские ASN
+    ipv6:
+      enabled: true
+      asn: ["AS48004", "AS8359"]
 
-# 3. Применение правил (по необходимости)
-sudo ./ufw-docker-rules-v4.sh  # Если generation.mode = "v4" или "both"
-sudo ./ufw-docker-rules-v6.sh  # Если generation.mode = "v6" или "both"
+# v6 скрипт использует международные провайдеры
+ufw_v6_script:
+  ssh_allowed_ips:
+    ipv4:
+      asn: ["AS13335", "AS15169"]  # Cloudflare + Google
+    ipv6:
+      enabled: true
+      asn: ["AS13335", "AS15169"]
 ```
 
-## Режимы работы
+**Результат:**
+- `ufw-docker-rules-v4.sh` содержит IPv4 + IPv6 от российских провайдеров
+- `ufw-docker-rules-v6.sh` содержит IPv4 + IPv6 от международных провайдеров
 
-### Режим 1: Только IPv4
+### Пример 2: Разные страны для разных скриптов
+
+```yaml
+# v4 скрипт для России
+ufw_v4_script:
+  docker_allowed_ips:
+    ipv4:
+      countries: ["RU"]
+    ipv6:
+      enabled: true
+      countries: ["RU"]
+
+# v6 скрипт для США
+ufw_v6_script:
+  docker_allowed_ips:
+    ipv4:
+      countries: ["US"]
+    ipv6:
+      enabled: true
+      countries: ["US"]
+```
+
+### Пример 3: Один скрипт с IPv6, другой без
+
+```yaml
+# v4 скрипт БЕЗ IPv6
+ufw_v4_script:
+  ssh_allowed_ips:
+    ipv4:
+      asn: ["AS48004"]
+    ipv6:
+      enabled: false  # Отключить IPv6 для v4 скрипта
+
+# v6 скрипт С IPv6
+ufw_v6_script:
+  ssh_allowed_ips:
+    ipv4:
+      asn: ["AS13335"]
+    ipv6:
+      enabled: true   # Включить IPv6 для v6 скрипта
+      asn: ["AS13335"]
+```
+
+### Пример 4: Обновление только одного скрипта
 
 ```yaml
 generation:
-  mode: "v4"
-  ipv6_enabled: false  # Глобально отключить IPv6
-```
-
-Результат:
-- Генерируются только `*_allowed_ips.txt` файлы
-- Обновляется только `ufw-docker-rules-v4.sh`
-
-### Режим 2: Только IPv6
-
-```yaml
-generation:
-  mode: "v6"
+  update_scripts: "v4"  # Обновлять только ufw-docker-rules-v4.sh
   ipv6_enabled: true
 ```
 
-Результат:
-- Генерируются только `*_allowed_ips_ipv6.txt` файлы
-- Обновляется только `ufw-docker-rules-v6.sh`
+## Сценарии использования
 
-### Режим 3: Dual-stack (рекомендуется)
+### Сценарий 1: Продакшн и тестовый сервер
 
-```yaml
-generation:
-  mode: "both"
-  ipv6_enabled: true
-```
+- **ufw-docker-rules-v4.sh** - продакшн правила (строгие, только доверенные сети)
+- **ufw-docker-rules-v6.sh** - тестовые правила (более широкие диапазоны)
 
-Результат:
-- Генерируются все файлы (IPv4 + IPv6)
-- Обновляются оба скрипта
+### Сценарий 2: Разные регионы
 
-## Примеры конфигураций
+- **ufw-docker-rules-v4.sh** - правила для России/СНГ
+- **ufw-docker-rules-v6.sh** - правила для международного доступа
 
-### Пример 1: Одинаковые источники для IPv4 и IPv6
+### Сценарий 3: Разные сервисы
 
-```yaml
-generation:
-  mode: "both"
-  ipv6_enabled: true
-
-ssh_allowed_ips:
-  ipv4:
-    asn: ["AS48004"]
-  ipv6:
-    enabled: true
-    asn: ["AS48004"]  # Те же ASN
-```
-
-### Пример 2: Разные источники для IPv4 и IPv6
-
-```yaml
-generation:
-  mode: "both"
-  ipv6_enabled: true
-
-docker_allowed_ips:
-  ipv4:
-    countries: ["RU"]  # Россия для IPv4
-  ipv6:
-    enabled: true
-    countries: ["US"]  # США для IPv6
-```
-
-### Пример 3: IPv6 отключен для конкретного списка
-
-```yaml
-generation:
-  mode: "both"
-  ipv6_enabled: true
-
-rustdesk_allowed_ips:
-  ipv4:
-    asn: ["AS13335"]
-  ipv6:
-    enabled: false  # Не генерировать IPv6 для RustDesk
-```
-
-### Пример 4: Прямые IP адреса + ASN
-
-```yaml
-ssh_allowed_ips:
-  ipv4:
-    direct_ips:
-      - "192.168.1.0/24"
-      - "10.0.0.0/8"
-    asn:
-      - "AS48004"
-  ipv6:
-    enabled: true
-    direct_ips:
-      - "2001:db8::/32"
-      - "fd00::/8"
-    asn:
-      - "AS13335"  # Другой ASN для IPv6
-```
+- **ufw-docker-rules-v4.sh** - внутренние сервисы
+- **ufw-docker-rules-v6.sh** - публичные API
 
 ## GitHub Actions
 
-Workflow `.github/workflows/update-ips.yml` полностью автоматизирован и уважает настройки конфигурации:
+Workflow автоматически:
 
 ```yaml
 - name: Generate IP lists
-  run: ./generate-ips.sh  # Использует generation.mode
+  run: ./generate-ips.sh  # Генерирует файлы для обоих скриптов
 
 - name: Update UFW scripts
-  run: ./update-ufw-script.sh  # Использует generation.mode
+  run: ./update-ufw-script.sh  # Обновляет оба скрипта
 ```
 
-### Триггеры запуска
+### Как это работает:
 
-- **По расписанию**: Каждый день в 2:00 UTC
-- **При изменении конфигурации**: Push в `ip-config.yml`
-- **Вручную**: Через интерфейс GitHub Actions
-
-## Источники данных MaxMind
-
-Система использует следующие CSV базы от MaxMind:
-
-**Для IPv4:**
-- `GeoLite2-ASN-Blocks-IPv4.csv`
-- `GeoLite2-Country-Blocks-IPv4.csv`
-- `GeoLite2-City-Blocks-IPv4.csv`
-
-**Для IPv6:**
-- `GeoLite2-ASN-Blocks-IPv6.csv`
-- `GeoLite2-Country-Blocks-IPv6.csv`
-- `GeoLite2-City-Blocks-IPv6.csv`
-
-Базы автоматически скачиваются и кешируются в `maxmind-data/`.
+1. `generate-ips.sh` читает `generation.update_scripts` из `ip-config.yml`
+2. Если `update_scripts: "both"`:
+   - Генерирует `v4_*` файлы из секции `ufw_v4_script`
+   - Генерирует `v6_*` файлы из секции `ufw_v6_script`
+3. `update-ufw-script.sh` обновляет соответствующие скрипты:
+   - `ufw-docker-rules-v4.sh` ← читает `v4_*` файлы
+   - `ufw-docker-rules-v6.sh` ← читает `v6_*` файлы
 
 ## Архитектура
 
 ### Процесс генерации
 
-1. **generate-ips.sh**:
-   - Читает `generation.mode` и `generation.ipv6_enabled` из конфигурации
-   - Для каждого списка:
-     - Если `mode = "v4"` или `"both"`: читает `{список}.ipv4.*` и генерирует IPv4 файл
-     - Если `mode = "v6"` или `"both"` И `ipv6_enabled = true`: проверяет `{список}.ipv6.enabled`
-     - Если `{список}.ipv6.enabled = true`: читает `{список}.ipv6.*` и генерирует IPv6 файл
+```
+ip-config.yml
+    ↓
+generation.update_scripts = "both"
+    ↓
+    ├─→ ufw_v4_script.*  →  v4_*.txt  →  ufw-docker-rules-v4.sh
+    └─→ ufw_v6_script.*  →  v6_*.txt  →  ufw-docker-rules-v6.sh
+```
 
-2. **update-ufw-script.sh**:
-   - Читает `generation.mode` из конфигурации (если не передан параметр)
-   - Обновляет соответствующие скрипты
+### Детальная схема
 
-3. **extract-ips-from-maxmind.py**:
-   - Принимает флаг `--ipv6` для выбора CSV баз
-   - Извлекает IP блоки из соответствующих файлов MaxMind
+```
+generate-ips.sh:
+  1. Читает generation.update_scripts
+  2. Если "v4" или "both":
+     - Читает ufw_v4_script.ssh_allowed_ips.ipv4.* → v4_ssh_allowed_ips.txt
+     - Читает ufw_v4_script.ssh_allowed_ips.ipv6.* → v4_ssh_allowed_ips_ipv6.txt
+     - То же для docker и rustdesk
+  3. Если "v6" или "both":
+     - Читает ufw_v6_script.ssh_allowed_ips.ipv4.* → v6_ssh_allowed_ips.txt
+     - Читает ufw_v6_script.ssh_allowed_ips.ipv6.* → v6_ssh_allowed_ips_ipv6.txt
+     - То же для docker и rustdesk
+
+update-ufw-script.sh:
+  1. Читает generation.update_scripts
+  2. Если "v4" или "both":
+     - Обновляет ufw-docker-rules-v4.sh:
+       * SSH_ALLOWED_IPS ← v4_ssh_allowed_ips.txt
+       * SSH_ALLOWED_IPS_IPV6 ← v4_ssh_allowed_ips_ipv6.txt
+       * То же для docker и rustdesk
+  3. Если "v6" или "both":
+     - Обновляет ufw-docker-rules-v6.sh:
+       * SSH_ALLOWED_IPS ← v6_ssh_allowed_ips.txt
+       * SSH_ALLOWED_IPS_IPV6 ← v6_ssh_allowed_ips_ipv6.txt
+       * То же для docker и rustdesk
+```
+
+## Источники данных MaxMind
+
+Для каждого списка (IPv4 и IPv6) используются соответствующие CSV базы:
+
+**IPv4:**
+- `GeoLite2-ASN-Blocks-IPv4.csv`
+- `GeoLite2-Country-Blocks-IPv4.csv`
+- `GeoLite2-City-Blocks-IPv4.csv`
+
+**IPv6:**
+- `GeoLite2-ASN-Blocks-IPv6.csv`
+- `GeoLite2-Country-Blocks-IPv6.csv`
+- `GeoLite2-City-Blocks-IPv6.csv`
 
 ## Troubleshooting
 
-### Не генерируются IPv6 адреса
+### Не генерируются файлы для v6 скрипта
+
+**Проверьте:**
+
+```yaml
+generation:
+  update_scripts: "both"  # Должно быть "both" или "v6"
+```
+
+### В скриптах нет IPv6 адресов
 
 **Проверьте:**
 
@@ -293,90 +302,88 @@ Workflow `.github/workflows/update-ips.yml` полностью автомати�
 
 2. Настройка конкретного списка:
    ```yaml
-   ssh_allowed_ips:
-     ipv6:
-       enabled: true  # Должно быть true
+   ufw_v4_script:
+     ssh_allowed_ips:
+       ipv6:
+         enabled: true  # Должно быть true
    ```
 
-3. Режим генерации:
-   ```yaml
-   generation:
-     mode: "both"  # Или "v6"
-   ```
-
-4. Наличие IPv6 баз MaxMind:
-   ```bash
-   ls -la maxmind-data/GeoLite2-*/
-   # Должны быть *-Blocks-IPv6.csv файлы
-   ```
-
-### Проверка режима работы
+### Проверка сгенерированных файлов
 
 ```bash
-# Посмотреть какой режим в конфигурации
-grep -A 2 "^generation:" ip-config.yml
+# Для v4 скрипта
+ls -lh generated-ips/v4_*
 
-# Проверить какие файлы сгенерированы
-ls -lh generated-ips/
+# Для v6 скрипта
+ls -lh generated-ips/v6_*
+
+# Проверить содержимое
+wc -l generated-ips/v4_*.txt
+wc -l generated-ips/v6_*.txt
 ```
 
 ### Валидация IP адресов
 
 ```bash
-# Проверить валидность IPv4
+# Проверить IPv4 для v4 скрипта
 python3 -c "
 import ipaddress
-for line in open('generated-ips/ssh_allowed_ips.txt'):
+for line in open('generated-ips/v4_ssh_allowed_ips.txt'):
     ipaddress.ip_network(line.strip())
-print('IPv4: OK')
+print('v4 SSH IPv4: OK')
 "
 
-# Проверить валидность IPv6
+# Проверить IPv6 для v4 скрипта
 python3 -c "
 import ipaddress
-for line in open('generated-ips/ssh_allowed_ips_ipv6.txt'):
+for line in open('generated-ips/v4_ssh_allowed_ips_ipv6.txt'):
     ipaddress.ip_network(line.strip())
-print('IPv6: OK')
+print('v4 SSH IPv6: OK')
 "
-```
-
-## Миграция с версии 2.0
-
-Если у вас старая конфигурация (без секций `ipv4`/`ipv6`), нужно обновить структуру:
-
-**Было (v2.0):**
-```yaml
-ssh_allowed_ips:
-  asn:
-    - "AS48004"
-  countries:
-    - "RU"
-```
-
-**Стало (v3.0):**
-```yaml
-generation:
-  mode: "both"
-  ipv6_enabled: true
-
-ssh_allowed_ips:
-  ipv4:
-    asn:
-      - "AS48004"
-    countries:
-      - "RU"
-  ipv6:
-    enabled: true
-    asn:
-      - "AS48004"
-    countries:
-      - "RU"
 ```
 
 ## Лучшие практики
 
-1. **Всегда указывайте `generation.mode`** в конфигурации явно
-2. **Используйте раздельные источники** для IPv4 и IPv6, если у провайдеров разные диапазоны
-3. **Отключайте IPv6 выборочно** только для тех списков, где он действительно не нужен
-4. **Проверяйте логи генерации** для понимания какие файлы создаются
-5. **Коммитьте ip-config.yml** в репозиторий для автоматического обновления через GitHub Actions
+1. **Явно указывайте `generation.update_scripts`** в конфигурации
+2. **Используйте осмысленные разделения**:
+   - v4 скрипт - для одного назначения
+   - v6 скрипт - для другого назначения
+3. **Документируйте назначение** каждого скрипта в комментариях
+4. **Тестируйте оба скрипта** перед применением в продакшне
+5. **Коммитьте ip-config.yml** для автоматического обновления через GitHub Actions
+
+## Миграция с версии 3.0
+
+**Было (v3.0):**
+```yaml
+version: "3.0"
+generation:
+  mode: "both"
+
+ssh_allowed_ips:
+  ipv4: ...
+  ipv6: ...
+```
+
+**Стало (v3.1):**
+```yaml
+version: "3.1"
+generation:
+  update_scripts: "both"
+
+ufw_v4_script:
+  ssh_allowed_ips:
+    ipv4: ...
+    ipv6: ...
+
+ufw_v6_script:
+  ssh_allowed_ips:
+    ipv4: ...
+    ipv6: ...
+```
+
+### Ключевые изменения:
+
+- `generation.mode` → `generation.update_scripts`
+- Одна секция `ssh_allowed_ips` → две секции `ufw_v4_script.ssh_allowed_ips` и `ufw_v6_script.ssh_allowed_ips`
+- Файлы `ssh_allowed_ips.txt` → `v4_ssh_allowed_ips.txt` и `v6_ssh_allowed_ips.txt`

@@ -45,9 +45,9 @@ get_config_mode() {
         return
     fi
 
-    # Пытаемся прочитать generation.mode из конфигурации
+    # Пытаемся прочитать generation.update_scripts из конфигурации
     if command -v yq &> /dev/null; then
-        local mode=$(yq eval ".generation.mode" "$CONFIG_FILE" 2>/dev/null || echo "both")
+        local mode=$(yq eval ".generation.update_scripts" "$CONFIG_FILE" 2>/dev/null || echo "both")
         echo "$mode"
     else
         python3 << EOF
@@ -55,7 +55,7 @@ import yaml
 try:
     with open('$CONFIG_FILE', 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
-    mode = data.get('generation', {}).get('mode', 'both')
+    mode = data.get('generation', {}).get('update_scripts', 'both')
     print(mode)
 except Exception:
     print('both')
@@ -278,7 +278,7 @@ show_statistics() {
 
 update_ufw_script() {
     local ufw_script=$1
-    local ip_suffix=$2
+    local script_prefix=$2   # v4 или v6
     local version_name=$3
 
     log_info "=========================================="
@@ -292,17 +292,24 @@ update_ufw_script() {
     fi
 
     log_info "UFW скрипт: $ufw_script"
-    log_info "IP суффикс: $ip_suffix"
+    log_info "Префикс файлов: ${script_prefix}_"
     echo ""
 
     # Создаем резервную копию
     create_backup "$ufw_script"
     echo ""
 
-    # Обновляем каждую секцию
-    update_section "$ufw_script" "SSH_ALLOWED_IPS" "${IP_DIR}/ssh_allowed_ips${ip_suffix}.txt"
-    update_section "$ufw_script" "DOCKER_ALLOWED_IPS" "${IP_DIR}/docker_allowed_ips${ip_suffix}.txt"
-    update_section "$ufw_script" "RUSTDESK_ALLOWED_IPS" "${IP_DIR}/rustdesk_allowed_ips${ip_suffix}.txt"
+    # Обновляем секции с IPv4 адресами
+    log_info "Обновление IPv4 секций..."
+    update_section "$ufw_script" "SSH_ALLOWED_IPS" "${IP_DIR}/${script_prefix}_ssh_allowed_ips.txt"
+    update_section "$ufw_script" "DOCKER_ALLOWED_IPS" "${IP_DIR}/${script_prefix}_docker_allowed_ips.txt"
+    update_section "$ufw_script" "RUSTDESK_ALLOWED_IPS" "${IP_DIR}/${script_prefix}_rustdesk_allowed_ips.txt"
+
+    # Обновляем секции с IPv6 адресами
+    log_info "Обновление IPv6 секций..."
+    update_section "$ufw_script" "SSH_ALLOWED_IPS_IPV6" "${IP_DIR}/${script_prefix}_ssh_allowed_ips_ipv6.txt"
+    update_section "$ufw_script" "DOCKER_ALLOWED_IPS_IPV6" "${IP_DIR}/${script_prefix}_docker_allowed_ips_ipv6.txt"
+    update_section "$ufw_script" "RUSTDESK_ALLOWED_IPS_IPV6" "${IP_DIR}/${script_prefix}_rustdesk_allowed_ips_ipv6.txt"
     echo ""
 
     # Проверка синтаксиса
@@ -357,10 +364,10 @@ main() {
         *)
             log_error "Неизвестный режим: $MODE"
             log_info "Использование: $0 [--v4|--v6|--both]"
-            log_info "  --v4   : Обновить ufw-docker-rules-v4.sh (IPv4)"
-            log_info "  --v6   : Обновить ufw-docker-rules-v6.sh (IPv6)"
+            log_info "  --v4   : Обновить только ufw-docker-rules-v4.sh"
+            log_info "  --v6   : Обновить только ufw-docker-rules-v6.sh"
             log_info "  --both : Обновить оба скрипта"
-            log_info "  (без параметра): Использовать generation.mode из ip-config.yml"
+            log_info "  (без параметра): Использовать generation.update_scripts из ip-config.yml"
             exit 1
             ;;
     esac
@@ -382,13 +389,13 @@ main() {
     local update_failed=false
 
     if [ "$MODE" = "v4" ] || [ "$MODE" = "both" ]; then
-        if ! update_ufw_script "${SCRIPT_DIR}/ufw-docker-rules-v4.sh" "" "ufw-docker-rules-v4.sh (IPv4)"; then
+        if ! update_ufw_script "${SCRIPT_DIR}/ufw-docker-rules-v4.sh" "v4" "ufw-docker-rules-v4.sh"; then
             update_failed=true
         fi
     fi
 
     if [ "$MODE" = "v6" ] || [ "$MODE" = "both" ]; then
-        if ! update_ufw_script "${SCRIPT_DIR}/ufw-docker-rules-v6.sh" "_ipv6" "ufw-docker-rules-v6.sh (IPv6)"; then
+        if ! update_ufw_script "${SCRIPT_DIR}/ufw-docker-rules-v6.sh" "v6" "ufw-docker-rules-v6.sh"; then
             update_failed=true
         fi
     fi

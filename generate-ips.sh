@@ -538,24 +538,22 @@ generate_ip_list_version() {
 # ГЕНЕРАЦИЯ ОБОИХ ВЕРСИЙ (IPv4 + IPv6)
 # ============================================
 
-generate_ip_list() {
-    local list_name=$1
-    local config_section=$2
-    local mode=$3
+generate_ip_list_for_script() {
+    local script_prefix=$1  # v4 или v6
+    local list_name=$2      # ssh_allowed_ips, docker_allowed_ips, rustdesk_allowed_ips
+    local config_section=$3 # ufw_v4_script.ssh_allowed_ips или ufw_v6_script.ssh_allowed_ips
     local ipv6_globally_enabled=$4
 
-    # Генерируем IPv4 версию если mode = "v4" или "both"
-    if [ "$mode" = "v4" ] || [ "$mode" = "both" ]; then
-        generate_ip_list_version "$list_name" "$config_section" false
-    fi
+    # Генерируем IPv4 версию (всегда)
+    local ipv4_filename="${script_prefix}_${list_name}"
+    generate_ip_list_version "$ipv4_filename" "$config_section" false
 
-    # Генерируем IPv6 версию если mode = "v6" или "both" И IPv6 глобально включен
+    # Генерируем IPv6 версию (если IPv6 включен глобально)
     if [ "$ipv6_globally_enabled" = "true" ]; then
-        if [ "$mode" = "v6" ] || [ "$mode" = "both" ]; then
-            generate_ip_list_version "${list_name}_ipv6" "$config_section" true
-        fi
+        local ipv6_filename="${script_prefix}_${list_name}_ipv6"
+        generate_ip_list_version "$ipv6_filename" "$config_section" true
     else
-        log_warning "IPv6 глобально отключен (generation.ipv6_enabled = false), пропускаем IPv6 генерацию"
+        log_warning "IPv6 глобально отключен, пропускаем IPv6 генерацию для ${script_prefix}_${list_name}"
     fi
 }
 
@@ -593,32 +591,51 @@ main() {
     echo ""
 
     # Чтение настроек генерации из конфигурации
-    local generation_mode=$(get_config_scalar "generation.mode")
+    local update_scripts=$(get_config_scalar "generation.update_scripts")
     local ipv6_enabled=$(get_config_scalar "generation.ipv6_enabled")
 
     # Значения по умолчанию
-    generation_mode="${generation_mode:-both}"
+    update_scripts="${update_scripts:-both}"
     ipv6_enabled="${ipv6_enabled:-true}"
 
     log_info "=========================================="
     log_info "НАСТРОЙКИ ГЕНЕРАЦИИ"
     log_info "=========================================="
-    log_info "Режим: $generation_mode"
+    log_info "Обновление скриптов: $update_scripts"
     log_info "IPv6 глобально: $ipv6_enabled"
     log_info "=========================================="
     echo ""
 
     # Валидация режима
-    if [ "$generation_mode" != "v4" ] && [ "$generation_mode" != "v6" ] && [ "$generation_mode" != "both" ]; then
-        log_error "Неверный generation.mode: $generation_mode"
+    if [ "$update_scripts" != "v4" ] && [ "$update_scripts" != "v6" ] && [ "$update_scripts" != "both" ]; then
+        log_error "Неверный generation.update_scripts: $update_scripts"
         log_error "Допустимые значения: v4, v6, both"
         exit 1
     fi
 
-    # Генерация списков IP с учетом настроек
-    generate_ip_list "ssh_allowed_ips" "ssh_allowed_ips" "$generation_mode" "$ipv6_enabled"
-    generate_ip_list "docker_allowed_ips" "docker_allowed_ips" "$generation_mode" "$ipv6_enabled"
-    generate_ip_list "rustdesk_allowed_ips" "rustdesk_allowed_ips" "$generation_mode" "$ipv6_enabled"
+    # Генерация списков IP для ufw-docker-rules-v4.sh
+    if [ "$update_scripts" = "v4" ] || [ "$update_scripts" = "both" ]; then
+        log_info "=========================================="
+        log_info "ГЕНЕРАЦИЯ ДЛЯ UFW-DOCKER-RULES-V4.SH"
+        log_info "=========================================="
+        echo ""
+
+        generate_ip_list_for_script "v4" "ssh_allowed_ips" "ufw_v4_script.ssh_allowed_ips" "$ipv6_enabled"
+        generate_ip_list_for_script "v4" "docker_allowed_ips" "ufw_v4_script.docker_allowed_ips" "$ipv6_enabled"
+        generate_ip_list_for_script "v4" "rustdesk_allowed_ips" "ufw_v4_script.rustdesk_allowed_ips" "$ipv6_enabled"
+    fi
+
+    # Генерация списков IP для ufw-docker-rules-v6.sh
+    if [ "$update_scripts" = "v6" ] || [ "$update_scripts" = "both" ]; then
+        log_info "=========================================="
+        log_info "ГЕНЕРАЦИЯ ДЛЯ UFW-DOCKER-RULES-V6.SH"
+        log_info "=========================================="
+        echo ""
+
+        generate_ip_list_for_script "v6" "ssh_allowed_ips" "ufw_v6_script.ssh_allowed_ips" "$ipv6_enabled"
+        generate_ip_list_for_script "v6" "docker_allowed_ips" "ufw_v6_script.docker_allowed_ips" "$ipv6_enabled"
+        generate_ip_list_for_script "v6" "rustdesk_allowed_ips" "ufw_v6_script.rustdesk_allowed_ips" "$ipv6_enabled"
+    fi
 
     # Итоговая статистика
     echo -e "${GREEN}=========================================="
@@ -627,27 +644,51 @@ main() {
     echo ""
 
     log_info "Сгенерированные файлы:"
-    for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
-        # IPv4 файл
-        local file_v4="${OUTPUT_DIR}/${list}.txt"
-        if [ -f "$file_v4" ]; then
-            local count_v4=$(wc -l < "$file_v4")
-            log_success "✓ ${list}.txt: $count_v4 IPv4 блоков"
-        fi
 
-        # IPv6 файл
-        local file_v6="${OUTPUT_DIR}/${list}_ipv6.txt"
-        if [ -f "$file_v6" ]; then
-            local count_v6=$(wc -l < "$file_v6")
-            log_success "✓ ${list}_ipv6.txt: $count_v6 IPv6 блоков"
-        fi
-    done
+    # Файлы для ufw-docker-rules-v4.sh
+    if [ "$update_scripts" = "v4" ] || [ "$update_scripts" = "both" ]; then
+        log_info "Для ufw-docker-rules-v4.sh:"
+        for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
+            # IPv4 файл
+            local file_v4="${OUTPUT_DIR}/v4_${list}.txt"
+            if [ -f "$file_v4" ]; then
+                local count_v4=$(wc -l < "$file_v4")
+                log_success "  ✓ v4_${list}.txt: $count_v4 IPv4 блоков"
+            fi
 
-    echo ""
-    log_success "Все списки IP (IPv4 + IPv6) сгенерированы успешно!"
-    log_info "Используйте update-ufw-script.sh --v4 для обновления ufw-docker-rules-v4.sh"
-    log_info "Используйте update-ufw-script.sh --v6 для обновления ufw-docker-rules-v6.sh"
-    log_info "Используйте update-ufw-script.sh --both для обновления обоих скриптов"
+            # IPv6 файл
+            local file_v6="${OUTPUT_DIR}/v4_${list}_ipv6.txt"
+            if [ -f "$file_v6" ]; then
+                local count_v6=$(wc -l < "$file_v6")
+                log_success "  ✓ v4_${list}_ipv6.txt: $count_v6 IPv6 блоков"
+            fi
+        done
+        echo ""
+    fi
+
+    # Файлы для ufw-docker-rules-v6.sh
+    if [ "$update_scripts" = "v6" ] || [ "$update_scripts" = "both" ]; then
+        log_info "Для ufw-docker-rules-v6.sh:"
+        for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
+            # IPv4 файл
+            local file_v4="${OUTPUT_DIR}/v6_${list}.txt"
+            if [ -f "$file_v4" ]; then
+                local count_v4=$(wc -l < "$file_v4")
+                log_success "  ✓ v6_${list}.txt: $count_v4 IPv4 блоков"
+            fi
+
+            # IPv6 файл
+            local file_v6="${OUTPUT_DIR}/v6_${list}_ipv6.txt"
+            if [ -f "$file_v6" ]; then
+                local count_v6=$(wc -l < "$file_v6")
+                log_success "  ✓ v6_${list}_ipv6.txt: $count_v6 IPv6 блоков"
+            fi
+        done
+        echo ""
+    fi
+
+    log_success "Все списки IP сгенерированы успешно!"
+    log_info "Используйте update-ufw-script.sh для обновления скриптов"
 }
 
 # ============================================
