@@ -77,7 +77,7 @@ jobs:
         run: |
           echo "Обновление UFW скриптов (режим из конфигурации)..."
           chmod +x update-ufw-script.sh
-          # Без параметров - использует generation.mode из ip-config.yml
+          # Без параметров - использует generation.update_scripts из ip-config.yml
           ./update-ufw-script.sh
 
       - name: Check for changes
@@ -101,20 +101,32 @@ jobs:
           echo "## 📊 Статистика IP адресов" > stats.md
           echo "" >> stats.md
 
-          echo "### IPv4 списки:" >> stats.md
+          echo "### ufw-docker-rules-v4.sh (скрипт 1):" >> stats.md
           for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
-            if [ -f "generated-ips/${list}.txt" ]; then
-              count=$(wc -l < "generated-ips/${list}.txt")
-              echo "- **${list}**: ${count} IP блоков" >> stats.md
+            # IPv4
+            if [ -f "generated-ips/v4_${list}.txt" ]; then
+              count=$(wc -l < "generated-ips/v4_${list}.txt")
+              echo "- **v4_${list}** (IPv4): ${count} блоков" >> stats.md
+            fi
+            # IPv6
+            if [ -f "generated-ips/v4_${list}_ipv6.txt" ]; then
+              count=$(wc -l < "generated-ips/v4_${list}_ipv6.txt")
+              echo "- **v4_${list}_ipv6** (IPv6): ${count} блоков" >> stats.md
             fi
           done
 
           echo "" >> stats.md
-          echo "### IPv6 списки:" >> stats.md
-          for list in ssh_allowed_ips_ipv6 docker_allowed_ips_ipv6 rustdesk_allowed_ips_ipv6; do
-            if [ -f "generated-ips/${list}.txt" ]; then
-              count=$(wc -l < "generated-ips/${list}.txt")
-              echo "- **${list}**: ${count} IP блоков" >> stats.md
+          echo "### ufw-docker-rules-v6.sh (скрипт 2):" >> stats.md
+          for list in ssh_allowed_ips docker_allowed_ips rustdesk_allowed_ips; do
+            # IPv4
+            if [ -f "generated-ips/v6_${list}.txt" ]; then
+              count=$(wc -l < "generated-ips/v6_${list}.txt")
+              echo "- **v6_${list}** (IPv4): ${count} блоков" >> stats.md
+            fi
+            # IPv6
+            if [ -f "generated-ips/v6_${list}_ipv6.txt" ]; then
+              count=$(wc -l < "generated-ips/v6_${list}_ipv6.txt")
+              echo "- **v6_${list}_ipv6** (IPv6): ${count} блоков" >> stats.md
             fi
           done
 
@@ -234,12 +246,20 @@ jobs:
               return valid
 
           files = [
-              'generated-ips/ssh_allowed_ips.txt',
-              'generated-ips/docker_allowed_ips.txt',
-              'generated-ips/rustdesk_allowed_ips.txt',
-              'generated-ips/ssh_allowed_ips_ipv6.txt',
-              'generated-ips/docker_allowed_ips_ipv6.txt',
-              'generated-ips/rustdesk_allowed_ips_ipv6.txt'
+              # Файлы для ufw-docker-rules-v4.sh
+              'generated-ips/v4_ssh_allowed_ips.txt',
+              'generated-ips/v4_docker_allowed_ips.txt',
+              'generated-ips/v4_rustdesk_allowed_ips.txt',
+              'generated-ips/v4_ssh_allowed_ips_ipv6.txt',
+              'generated-ips/v4_docker_allowed_ips_ipv6.txt',
+              'generated-ips/v4_rustdesk_allowed_ips_ipv6.txt',
+              # Файлы для ufw-docker-rules-v6.sh
+              'generated-ips/v6_ssh_allowed_ips.txt',
+              'generated-ips/v6_docker_allowed_ips.txt',
+              'generated-ips/v6_rustdesk_allowed_ips.txt',
+              'generated-ips/v6_ssh_allowed_ips_ipv6.txt',
+              'generated-ips/v6_docker_allowed_ips_ipv6.txt',
+              'generated-ips/v6_rustdesk_allowed_ips_ipv6.txt'
           ]
 
           all_valid = True
