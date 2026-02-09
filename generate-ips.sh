@@ -186,11 +186,23 @@ try:
         print("ERROR: Конфигурация должна быть словарем")
         sys.exit(1)
 
-    # Проверяем наличие хотя бы одной секции
-    required_sections = ['ssh_allowed_ips', 'docker_allowed_ips', 'rustdesk_allowed_ips']
-    if not any(section in config for section in required_sections):
-        print("ERROR: Нет ни одной секции IP адресов")
+    # Проверяем наличие секции generation
+    if 'generation' not in config:
+        print("ERROR: Отсутствует секция 'generation'")
         sys.exit(1)
+
+    # Проверяем наличие хотя бы одного скрипта (ufw_v4_script или ufw_v6_script)
+    if 'ufw_v4_script' not in config and 'ufw_v6_script' not in config:
+        print("ERROR: Нет ни одной секции скрипта (ufw_v4_script или ufw_v6_script)")
+        sys.exit(1)
+
+    # Проверяем структуру секций скриптов
+    for script_section in ['ufw_v4_script', 'ufw_v6_script']:
+        if script_section in config:
+            script_config = config[script_section]
+            if not isinstance(script_config, dict):
+                print(f"ERROR: Секция '{script_section}' должна быть словарем")
+                sys.exit(1)
 
     print("OK")
     sys.exit(0)
