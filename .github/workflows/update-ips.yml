@@ -2,8 +2,8 @@ name: Update UFW IP Lists
 
 on:
   # Запуск по расписанию (каждый день в 2:00 UTC)
-  schedule:
-    - cron: '0 2 * * *'
+#  schedule:
+#    - cron: '0 2 * * *'
 
   # Запуск вручную
   workflow_dispatch:
